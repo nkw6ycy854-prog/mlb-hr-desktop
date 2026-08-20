@@ -1,0 +1,46 @@
+MLB HR Desktop implementation verification
+Date: 2026-08-17
+
+$ python -m compileall -q src training scripts
+PASS
+
+$ python -m training.cli --help
+usage: python -m training.cli [-h]
+                              {bootstrap-statcast,build-training-table,validate,freeze-candidate,run-holdout-2025,finalize-release} ...
+
+Offline training/validation pipeline. Never used by production inference.
+
+positional arguments:
+  {bootstrap-statcast,build-training-table,validate,freeze-candidate,run-holdout-2025,finalize-release}
+
+options:
+  -h, --help            show this help message and exit
+
+$ pytest -q
+.................                                                        [100%]
+
+$ PYTHONPATH=src python -m mlb_hr.selftest
+Expected to be PARTIAL/FAIL in this Linux container because PySide6, DuckDB and keyring wheels are not installed here:
+{
+  "checks": {
+    "duckdb_import": false,
+    "keyring_import": false,
+    "model_package_valid": true,
+    "odds_isolation": true,
+    "postgame_import": true,
+    "pyside6_import": false,
+    "python_runtime": true,
+    "sqlite_migration": true
+  },
+  "created_at": "2026-08-17T20:34:32.428961+00:00",
+  "details": {
+    "bundled_model_hash": "4922b2fe8ab41f4a71b5341a00c0d868dc8626ec8ae34c042df0621d7f9e758f",
+    "bundled_model_predictive_ready": false,
+    "bundled_model_release_ready": false,
+    "bundled_model_version": "DEV-BASELINE-0.1",
+    "duckdb_error": "No module named 'duckdb'",
+    "keyring_error": "No module named 'keyring'",
+    "pyside6_error": "No module named 'PySide6'"
+  },
+  "passed": false
+}

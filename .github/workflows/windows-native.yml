@@ -1,0 +1,79 @@
+name: Windows Native Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-native:
+    runs-on: windows-latest
+
+    env:
+      EXPECTED_MODEL_HASH: a82a54ba6b49bce56081d7edd2abe1a08816673145fc4addc8f6e8fec82f342c
+      MODEL_PACKAGE_DIR: release_model/V1.0.0_predictive
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install project and build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,build]"
+          python -m pip install ordered-set==4.1.0 zstandard==0.25.0
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          python -m pytest -q
+
+      - name: Verify and stage frozen predictive model
+        shell: pwsh
+        run: |
+          python scripts/stage_model.py --model-dir "$env:MODEL_PACKAGE_DIR"
+
+      - name: Build Windows executable
+        shell: pwsh
+        run: |
+          pyside6-deploy -c pysidedeploy.spec
+
+      - name: Locate executable and run native smoke test
+        shell: pwsh
+        run: |
+          $artifact = Get-ChildItem -Path build -Filter *.exe -Recurse |
+            Select-Object -First 1
+
+          if (-not $artifact) {
+            throw "No Windows .exe artifact was generated."
+          }
+
+          Write-Host "Native artifact: $($artifact.FullName)"
+
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+
+          Copy-Item `
+            -Path $artifact.FullName `
+            -Destination "artifacts/MLB-HR-Windows.exe"
+
+          python scripts/native_smoke.py `
+            --artifact "artifacts/MLB-HR-Windows.exe" `
+            --expected-model-hash "$env:EXPECTED_MODEL_HASH" `
+            --output build_reports/windows.json
+
+      - name: Upload Windows native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MLB-HR-Windows-Native
+          path: |
+            artifacts/MLB-HR-Windows.exe
+            build_reports/windows.json
+          if-no-files-found: error

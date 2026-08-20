@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlb-hr-desktop"
+version = "0.1.0"
+description = "Local-first MLB home run probability desktop application"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "PySide6==6.11.1",
+  "duckdb==1.5.5",
+  "httpx==0.28.1",
+  "keyring==25.7.0",
+  "numpy==2.3.5",
+  "pandas==2.3.3",
+  "scikit-learn==1.8.0",
+  "scipy==1.17.0",
+]
+
+[project.optional-dependencies]
+build = ["Nuitka==4.1.3"]
+dev = ["pytest==9.0.2"]
+
+[project.scripts]
+mlb-hr = "mlb_hr.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.package-data]
+mlb_hr = ["resources/migrations/*.sql", "resources/bundled_model/*.json"]
