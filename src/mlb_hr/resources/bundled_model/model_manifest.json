@@ -1,329 +1,83 @@
 {
-  "calibration": {
-    "method": "none"
+  "model_version": "DEV-BASELINE-0.1",
+  "feature_version": "FEATURES-DEV-1",
+  "calibration_version": "UNCALIBRATED-DEV",
+  "quality_gate_version": "QG-DEV-1",
+  "model_type": "logistic_per_pa",
+  "release_ready": false,
+  "training_cutoff": null,
+  "validation_periods": [],
+  "holdout_period": "2025_LOCKED_NOT_RUN",
+  "feature_names": [
+    "league_hr_pa", "batter_hr_pa", "batter_barrel_rate", "batter_hardhit_rate",
+    "batter_avg_ev", "batter_flyball_rate", "batter_xslg", "batter_platoon_delta",
+    "batter_recent_delta", "pitcher_hr_bf", "pitcher_barrel_allowed", "pitcher_hardhit_allowed",
+    "pitcher_avg_ev_allowed", "pitcher_xslg_allowed", "pitcher_platoon_delta", "pitcher_recent_delta",
+    "pitch_type_match", "velocity_match", "zone_match", "similar_pitcher_delta", "bvp_delta",
+    "park_delta", "weather_index", "profile_change_score"
+  ],
+  "feature_means": {
+    "league_hr_pa": 0.03, "batter_hr_pa": 0.03, "batter_barrel_rate": 0.07, "batter_hardhit_rate": 0.38,
+    "batter_avg_ev": 88.5, "batter_flyball_rate": 0.23, "batter_xslg": 0.45, "batter_platoon_delta": 0.0,
+    "batter_recent_delta": 0.0, "pitcher_hr_bf": 0.03, "pitcher_barrel_allowed": 0.07, "pitcher_hardhit_allowed": 0.38,
+    "pitcher_avg_ev_allowed": 88.5, "pitcher_xslg_allowed": 0.45, "pitcher_platoon_delta": 0.0, "pitcher_recent_delta": 0.0,
+    "pitch_type_match": 0.0, "velocity_match": 0.0, "zone_match": 0.0, "similar_pitcher_delta": 0.0, "bvp_delta": 0.0,
+    "park_delta": 0.0, "weather_index": 0.0, "profile_change_score": 0.0
   },
-  "calibration_version": "CAL-V1-CANDIDATE-2",
+  "feature_scales": {
+    "league_hr_pa": 0.008, "batter_hr_pa": 0.018, "batter_barrel_rate": 0.05, "batter_hardhit_rate": 0.10,
+    "batter_avg_ev": 3.0, "batter_flyball_rate": 0.10, "batter_xslg": 0.18, "batter_platoon_delta": 0.015,
+    "batter_recent_delta": 0.015, "pitcher_hr_bf": 0.012, "pitcher_barrel_allowed": 0.04, "pitcher_hardhit_allowed": 0.08,
+    "pitcher_avg_ev_allowed": 2.2, "pitcher_xslg_allowed": 0.14, "pitcher_platoon_delta": 0.012, "pitcher_recent_delta": 0.012,
+    "pitch_type_match": 0.12, "velocity_match": 0.12, "zone_match": 0.12, "similar_pitcher_delta": 0.015, "bvp_delta": 0.015,
+    "park_delta": 0.08, "weather_index": 0.08, "profile_change_score": 0.5
+  },
   "coefficients": {
-    "batter_avg_ev": 0.07514294867718006,
-    "batter_barrel_rate": 0.0738390287458615,
-    "batter_flyball_rate": 0.09181163478897619,
-    "batter_hardhit_rate": 0.07398348015719274,
-    "batter_hr_pa": 0.08152783472965248,
-    "batter_platoon_delta": 0.06728643276964896,
-    "batter_recent_delta": 0.044434689616969114,
-    "batter_xslg": -0.029106946284864633,
-    "league_hr_pa": 0.029924969219621685,
-    "pitcher_avg_ev_allowed": 0.10174807249566378,
-    "pitcher_barrel_allowed": 0.04752119102255288,
-    "pitcher_hardhit_allowed": -0.09018487395806478,
-    "pitcher_hr_bf": 0.058354932781241174,
-    "pitcher_platoon_delta": 0.038249267894058914,
-    "pitcher_recent_delta": 0.012017972839091031,
-    "pitcher_xslg_allowed": -0.02678230817293224
+    "league_hr_pa": 0.10, "batter_hr_pa": 0.65, "batter_barrel_rate": 0.26, "batter_hardhit_rate": 0.12,
+    "batter_avg_ev": 0.12, "batter_flyball_rate": 0.10, "batter_xslg": 0.18, "batter_platoon_delta": 0.12,
+    "batter_recent_delta": 0.05, "pitcher_hr_bf": 0.38, "pitcher_barrel_allowed": 0.18, "pitcher_hardhit_allowed": 0.10,
+    "pitcher_avg_ev_allowed": 0.10, "pitcher_xslg_allowed": 0.13, "pitcher_platoon_delta": 0.10, "pitcher_recent_delta": 0.04,
+    "pitch_type_match": 0.07, "velocity_match": 0.05, "zone_match": 0.06, "similar_pitcher_delta": 0.04, "bvp_delta": 0.01,
+    "park_delta": 0.08, "weather_index": 0.04, "profile_change_score": 0.04
+  },
+  "intercept": -3.55,
+  "calibration": {"method": "none"},
+  "thresholds": {
+    "primary_probability": 0.20,
+    "secondary_probability": 0.17,
+    "watch_probability": 0.14,
+    "primary_confidence": 70,
+    "secondary_confidence": 55,
+    "primary_matchup": 80,
+    "secondary_matchup": 70,
+    "max_primary_ood": 55,
+    "max_bet_ood": 80
+  },
+  "uncertainty": {
+    "scenario_draws": 600,
+    "feature_noise_scale": 0.18,
+    "bullpen_adjustment_scale": 3.5,
+    "confidence_floor": 5
+  },
+  "versions": {
+    "ZONE_VERSION": "ZONE-9CELL-DEV1",
+    "SIMILAR_PITCHER_VERSION": "SIM-DEV1",
+    "PARK_VERSION": "PARK-DEV1",
+    "PA_VERSION": "PA-DEV1",
+    "STARTER_EXPOSURE_VERSION": "SPX-DEV1",
+    "BULLPEN_VERSION": "BP-DEV1",
+    "UNCERTAINTY_VERSION": "UNC-DEV1"
   },
   "deterministic_seed": 20260817,
-  "feature_means": {
-    "batter_avg_ev": 88.69823685786059,
-    "batter_barrel_rate": 0.07966831541565723,
-    "batter_flyball_rate": 0.24574049675699375,
-    "batter_hardhit_rate": 0.39083252278437797,
-    "batter_hr_pa": 0.035215344935558474,
-    "batter_platoon_delta": 0.00011064032384851022,
-    "batter_recent_delta": -0.0008896960868065312,
-    "batter_xslg": 0.5379025123637063,
-    "league_hr_pa": 0.033691954016963635,
-    "pitcher_avg_ev_allowed": 88.32868757345969,
-    "pitcher_barrel_allowed": 0.07335154171024676,
-    "pitcher_hardhit_allowed": 0.3800233332376756,
-    "pitcher_hr_bf": 0.03283048699711563,
-    "pitcher_platoon_delta": -0.0002291394690025696,
-    "pitcher_recent_delta": -0.0005387526533002043,
-    "pitcher_xslg_allowed": 0.5110398785154004
-  },
-  "feature_names": [
-    "league_hr_pa",
-    "batter_hr_pa",
-    "batter_barrel_rate",
-    "batter_hardhit_rate",
-    "batter_avg_ev",
-    "batter_flyball_rate",
-    "batter_xslg",
-    "batter_platoon_delta",
-    "batter_recent_delta",
-    "pitcher_hr_bf",
-    "pitcher_barrel_allowed",
-    "pitcher_hardhit_allowed",
-    "pitcher_avg_ev_allowed",
-    "pitcher_xslg_allowed",
-    "pitcher_platoon_delta",
-    "pitcher_recent_delta"
-  ],
-  "feature_scales": {
-    "batter_avg_ev": 1.6412179551240649,
-    "batter_barrel_rate": 0.028030180559502498,
-    "batter_flyball_rate": 0.034797238273359024,
-    "batter_hardhit_rate": 0.0501644037597105,
-    "batter_hr_pa": 0.0103461461038744,
-    "batter_platoon_delta": 0.005874964528501325,
-    "batter_recent_delta": 0.009232032472360981,
-    "batter_xslg": 0.08236967190636568,
-    "league_hr_pa": 0.0017211897536893136,
-    "pitcher_avg_ev_allowed": 0.8699716770246254,
-    "pitcher_barrel_allowed": 0.011149219630977297,
-    "pitcher_hardhit_allowed": 0.024432671528569976,
-    "pitcher_hr_bf": 0.0058423099068963796,
-    "pitcher_platoon_delta": 0.005688163233693714,
-    "pitcher_recent_delta": 0.00651188479661944,
-    "pitcher_xslg_allowed": 0.040363050942938586
-  },
-  "feature_version": "FEATURES-V1-CANDIDATE-2",
-  "holdout_period": "2025_OFFICIAL_RUN_COMPLETE",
-  "intercept": -3.4633925769369642,
+  "package_hash": "",
   "metadata": {
-    "excluded_unvalidated_modules": [
-      "pitch_type_match",
-      "velocity_match",
-      "zone_match",
-      "similar_pitcher_delta",
-      "bvp_delta",
-      "park_delta",
-      "weather_index",
-      "profile_change_score"
-    ],
+    "warning": "UNVALIDATED DEVELOPMENT BASELINE - NOT FOR REAL BET RECOMMENDATIONS",
     "feature_config": {
-      "bullpen": {},
-      "home_ninth_shift": 0.0,
-      "pa_distribution_by_slot": {
-        "1": {
-          "1": 0.0033720350998199026,
-          "2": 0.007127256006437522,
-          "3": 0.04326167758746216,
-          "4": 0.43238686439054297,
-          "5": 0.45940146376978197,
-          "6": 0.05058052649729854,
-          "7": 0.0038701766486569336
-        },
-        "2": {
-          "1": 0.002721140579487966,
-          "2": 0.007971792120190096,
-          "3": 0.04415146405028361,
-          "4": 0.5089682661352138,
-          "5": 0.39751648014717156,
-          "6": 0.03583473861720068,
-          "7": 0.002836118350452246
-        },
-        "3": {
-          "1": 0.0027599954000076666,
-          "2": 0.009621650630582282,
-          "3": 0.05443324261126231,
-          "4": 0.5736573772377046,
-          "5": 0.3314294476175873,
-          "6": 0.02568329052784912,
-          "7": 0.0024149959750067083
-        },
-        "4": {
-          "1": 0.0028876140607554,
-          "2": 0.01101143495168059,
-          "3": 0.07296038193508643,
-          "4": 0.6223385823740037,
-          "5": 0.26993416239941476,
-          "6": 0.01886574519693528,
-          "7": 0.002002079082123744
-        },
-        "5": {
-          "1": 0.0034061000154822726,
-          "2": 0.017882025081281932,
-          "3": 0.11414305620065025,
-          "4": 0.6404242142746556,
-          "5": 0.2081591577643598,
-          "6": 0.014321102337823192,
-          "7": 0.0016643443257470197
-        },
-        "6": {
-          "1": 0.0028027560434427186,
-          "2": 0.02709330841994628,
-          "3": 0.16579080540309082,
-          "4": 0.6327611039744637,
-          "5": 0.15964031297442485,
-          "6": 0.01043248082837012,
-          "7": 0.0014792323562614349
-        },
-        "7": {
-          "1": 0.003526369406786302,
-          "2": 0.041258522059399734,
-          "3": 0.2242770942716088,
-          "4": 0.6008541650340883,
-          "5": 0.1207193793589844,
-          "6": 0.008189013400203745,
-          "7": 0.0011754564689287674
-        },
-        "8": {
-          "1": 0.0047335410831919845,
-          "2": 0.06985917715277504,
-          "3": 0.3025127213916611,
-          "4": 0.5282237387085322,
-          "5": 0.08800441797167764,
-          "6": 0.005719695475523648,
-          "7": 0.0009467082166383969
-        },
-        "9": {
-          "1": 0.0578243441679565,
-          "2": 0.17275866174544588,
-          "3": 0.33829424137794184,
-          "4": 0.37754494582688414,
-          "5": 0.05032345120450847,
-          "6": 0.0028574830336944874,
-          "7": 0.0003968726435686788
-        }
-      },
-      "park": {
-        "humidity_per_20pct": 0.0,
-        "park_factors": {},
-        "temperature_per_10f": 0.0,
-        "weather_cap": 0.12,
-        "wind_out_per_10mph": 0.0
-      },
-      "player_survival_default": 1.0,
-      "reliability": {
-        "batter_bbe_k": 150.0,
-        "batter_pa_k": 250.0,
-        "bvp_pa_k": 60,
-        "pitcher_bbe_k": 180.0,
-        "pitcher_bf_k": 300.0,
-        "split_pa_k": 120.0
-      },
-      "starter_exposure": {
-        "league_starter_bf_prior": 18.5,
-        "starter_bf_shrink_k": 8,
-        "starter_survival_scale": 3.4
-      }
-    },
-    "game_probability_policy": {
-      "individual_bullpen_adjustment": "DISABLED_UNTIL_OOS_VALIDATED",
-      "post_starter_fallback": "batter_hr_pa",
-      "starter_matchup": "model_per_pa"
-    },
-    "holdout_result": {
-      "blockers": [],
-      "candidate_hash": "f8c751b8ba61ccd54328141fdbff2c27702e815cfc756839780262559e2c5693",
-      "holdout_run_id": "082baecfbd1f7b8cce7a",
-      "metrics": {
-        "a": {
-          "brier": 0.10304688907947737,
-          "ece": 0.006208319101283151,
-          "log_loss": 0.3592995762505523,
-          "monotonicity": 0.7142857142857143,
-          "n": 43322
-        },
-        "b": {
-          "brier": 0.10162871782030115,
-          "ece": 0.0070899560550828225,
-          "log_loss": 0.35251362640978745,
-          "monotonicity": 1.0,
-          "n": 43322
-        },
-        "c": {
-          "brier": 0.10148348462693904,
-          "ece": 0.004818062455083802,
-          "log_loss": 0.35180143280702897,
-          "monotonicity": 1.0,
-          "n": 43322
-        },
-        "full": {
-          "brier": 0.10141442394813532,
-          "ece": 0.003296296580835006,
-          "log_loss": 0.3514130209048257,
-          "monotonicity": 1.0,
-          "n": 43322
-        }
-      },
-      "passed": true,
-      "run_at": "2026-08-19T23:33:25.743198+00:00"
-    },
-    "holdout_tolerances": {
-      "max_holdout_brier": 0.11028080846855587,
-      "max_holdout_ece": 0.03133143495252569,
-      "min_holdout_monotonicity": 0.9,
-      "must_beat_baseline_a": true,
-      "must_beat_baseline_b": true,
-      "must_beat_baseline_c": true,
-      "validation_annual": [
-        {
-          "brier": 0.09594731472336164,
-          "ece": 0.022517134999254337,
-          "log_loss": 0.33794092941545756,
-          "monotonicity": 1.0,
-          "n": 43288,
-          "year": 2022
-        },
-        {
-          "brier": 0.10572053614363291,
-          "ece": 0.0032728485640359096,
-          "log_loss": 0.36310510648551114,
-          "monotonicity": 1.0,
-          "n": 43060,
-          "year": 2023
-        },
-        {
-          "brier": 0.09948473802065975,
-          "ece": 0.008480421038632722,
-          "log_loss": 0.3468201761338648,
-          "monotonicity": 1.0,
-          "n": 43232,
-          "year": 2024
-        }
-      ]
-    },
-    "predictive_release_ready": true,
-    "release_status": "PREDICTIVE_RELEASE_READY_PENDING_NATIVE_BUILD_TESTS",
-    "validation_report_hash": "88f59a2bc6ae2c1b7f1158947e250bd15b4772aee742b9154f0e223ee01851e8"
-  },
-  "model_type": "logistic_per_pa",
-  "model_version": "V1-CANDIDATE-2",
-  "package_hash": "a82a54ba6b49bce56081d7edd2abe1a08816673145fc4addc8f6e8fec82f342c",
-  "quality_gate_version": "QG-V1-CANDIDATE-2",
-  "release_ready": false,
-  "thresholds": {
-    "confidence_high": 81.30136718231358,
-    "confidence_low": 42.731279876171115,
-    "confidence_medium": 63.26796013067408,
-    "max_bet_ood": 32.046229444533346,
-    "max_primary_ood": 23.940085909431364,
-    "primary_confidence": 70.13028466496297,
-    "primary_matchup": 0.0,
-    "primary_max_calibration_gap": 0.02973140164612864,
-    "primary_min_lift": 0.03988058340520341,
-    "primary_min_n": 15234.0,
-    "primary_probability": 0.13456758236832123,
-    "secondary_confidence": 57.21235226860622,
-    "secondary_matchup": 0.0,
-    "secondary_probability": 0.11591696013393991,
-    "threshold_support_failed": 0.0,
-    "tier_max_calibration_gap": 0.02973140164612864,
-    "tier_min_n": 6067.0,
-    "tier_min_separation": 0.017830103221090632,
-    "watch_probability": 0.09680565389589539
-  },
-  "training_cutoff": "2024-12-31",
-  "uncertainty": {
-    "bullpen_adjustment_scale": 0.0,
-    "confidence_floor": 5,
-    "feature_noise_scale": 0.15,
-    "scenario_draws": 600
-  },
-  "validation_periods": [
-    "2019-2021->2022",
-    "2019-2022->2023",
-    "2019-2023->2024"
-  ],
-  "versions": {
-    "BULLPEN_VERSION": "BP-NEUTRAL-BATTER-BASELINE-V1",
-    "GAME_PROBABILITY_VERSION": "GAME-HR-SPX-V2",
-    "PARK_VERSION": "STRUCTURE_IMPLEMENTED_NOT_VALIDATED",
-    "PA_VERSION": "PA-DIST-V1-CANDIDATE",
-    "SIMILAR_PITCHER_VERSION": "NOT_IN_V1_CANDIDATE",
-    "STARTER_EXPOSURE_VERSION": "SPX-EMPIRICAL-V1",
-    "UNCERTAINTY_VERSION": "UNC-V1-STRUCTURE",
-    "ZONE_VERSION": "NOT_IN_V1_CANDIDATE"
+      "reliability": {"batter_pa_k": 250, "batter_bbe_k": 150, "pitcher_bf_k": 300, "pitcher_bbe_k": 180, "bvp_pa_k": 60, "split_pa_k": 120},
+      "player_survival_default": 0.985,
+      "starter_exposure": {"league_starter_bf_prior": 18.5, "starter_bf_shrink_k": 8, "starter_survival_scale": 3.4},
+      "park": {"temperature_per_10f": 0.0, "wind_out_per_10mph": 0.0, "humidity_per_20pct": 0.0, "weather_cap": 0.12, "park_factors": {}},
+      "bullpen": {}
+    }
   }
 }
