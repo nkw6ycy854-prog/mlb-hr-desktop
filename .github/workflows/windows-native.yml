@@ -22,29 +22,35 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.13'
-          cache: pip
+
+      - name: Create virtual environment
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
 
       - name: Install project and build dependencies
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,build]"
-          python -m pip install ordered-set==4.1.0 zstandard==0.25.0
+          & ".\.venv\Scripts\python.exe" -m pip install -e ".[dev,build]"
+          & ".\.venv\Scripts\python.exe" -m pip install ordered-set==4.1.0 zstandard==0.25.0
 
       - name: Run tests
         shell: pwsh
         run: |
-          python -m pytest -q
+          & ".\.venv\Scripts\python.exe" -m pytest -q
 
       - name: Verify and stage frozen predictive model
         shell: pwsh
         run: |
-          python scripts/stage_model.py --model-dir "$env:MODEL_PACKAGE_DIR"
+          & ".\.venv\Scripts\python.exe" scripts/stage_model.py `
+            --model-dir "$env:MODEL_PACKAGE_DIR"
 
       - name: Build Windows executable
         shell: pwsh
         run: |
-          pyside6-deploy -c pysidedeploy.spec
+          & ".\.venv\Scripts\pyside6-deploy.exe" `
+            -c pysidedeploy.spec
 
       - name: Locate executable and run native smoke test
         shell: pwsh
@@ -64,7 +70,7 @@ jobs:
             -Path $artifact.FullName `
             -Destination "artifacts/MLB-HR-Windows.exe"
 
-          python scripts/native_smoke.py `
+          & ".\.venv\Scripts\python.exe" scripts/native_smoke.py `
             --artifact "artifacts/MLB-HR-Windows.exe" `
             --expected-model-hash "$env:EXPECTED_MODEL_HASH" `
             --output build_reports/windows.json
