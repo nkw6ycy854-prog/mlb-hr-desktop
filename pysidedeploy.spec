@@ -3,7 +3,7 @@ title = MLB HR
 input_file = src/mlb_hr/app.py
 project_dir = .
 exec_directory = build
-icon = /Users/sebastianrosario/Desktop/mlb_hr_desktop/.venv/lib/python3.13/site-packages/PySide6/scripts/deploy_lib/pyside_icon.icns
+icon =
 
 [python]
 python_path = /Users/sebastianrosario/Desktop/mlb_hr_desktop/.venv/bin/python

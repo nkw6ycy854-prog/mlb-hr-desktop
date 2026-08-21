@@ -54,9 +54,18 @@ jobs:
 
           Write-Host "VIRTUAL_ENV=$env:VIRTUAL_ENV"
 
+          # Never reuse a platform-specific icon path written by macOS.
+          $spec = Get-Content "pysidedeploy.spec"
+          $spec = $spec -replace '^\\s*icon\\s*=.*$', 'icon ='
+          $spec | Set-Content -Encoding UTF8 "pysidedeploy.windows.spec"
+
+          Write-Host "Windows deployment spec:"
+          Get-Content "pysidedeploy.windows.spec"
+
           & ".\.venv\Scripts\pyside6-deploy.exe" `
             --force `
-            -c pysidedeploy.spec
+            --verbose `
+            -c pysidedeploy.windows.spec
 
       - name: Locate executable and run native smoke test
         shell: pwsh
