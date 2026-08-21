@@ -49,7 +49,13 @@ jobs:
       - name: Build Windows executable
         shell: pwsh
         run: |
+          $env:VIRTUAL_ENV = (Resolve-Path ".venv").Path
+          $env:PATH = "$env:VIRTUAL_ENV\Scripts;$env:PATH"
+
+          Write-Host "VIRTUAL_ENV=$env:VIRTUAL_ENV"
+
           & ".\.venv\Scripts\pyside6-deploy.exe" `
+            --force `
             -c pysidedeploy.spec
 
       - name: Locate executable and run native smoke test
