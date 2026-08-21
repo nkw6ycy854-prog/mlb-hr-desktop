@@ -33,6 +33,21 @@ class SQLiteStore:
         return con
 
     @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield a SQLite connection and always close it on exit.
+
+        sqlite3.Connection's own context manager commits/rolls back but does
+        not close the underlying file handle. That leaks handles on Windows
+        and can prevent TemporaryDirectory cleanup with WinError 32.
+        """
+        con = self.connect()
+        try:
+            with con:
+                yield con
+        finally:
+            con.close()
+
+    @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         con = self.connect()
         try:
@@ -53,13 +68,13 @@ class SQLiteStore:
         for path in files:
             try: versions.append((int(path.name.split("_",1)[0]),path))
             except ValueError: continue
-        with self.connect() as con:
+        with self.connection() as con:
             con.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
             applied={int(r[0]) for r in con.execute("SELECT version FROM schema_migrations")}
         pending=[(v,p) for v,p in versions if v not in applied]
         if existed_before and pending:
             self._backup_before_migration()
-        with self.connect() as con:
+        with self.connection() as con:
             for version,path in pending:
                 script=path.read_text(encoding="utf-8")
                 con.executescript(script)
@@ -89,7 +104,7 @@ class SQLiteStore:
             )
 
     def get_state(self, key: str, default: Any = None) -> Any:
-        with self.connect() as con:
+        with self.connection() as con:
             row = con.execute("SELECT value_json FROM app_state WHERE key=?", (key,)).fetchone()
         if not row:
             return default
@@ -280,7 +295,7 @@ class SQLiteStore:
             )
 
     def pending_predictions(self) -> list[sqlite3.Row]:
-        with self.connect() as con:
+        with self.connection() as con:
             return list(
                 con.execute(
                     """
@@ -337,7 +352,7 @@ class SQLiteStore:
             )
 
     def pending_combinations(self) -> list[sqlite3.Row]:
-        with self.connect() as con:
+        with self.connection() as con:
             return list(con.execute(
                 """SELECT c.* FROM combinations c
                    LEFT JOIN combination_settlements s ON s.combination_id=c.combination_id AND s.active=1
@@ -346,7 +361,7 @@ class SQLiteStore:
             ))
 
     def active_combination_settlement(self, combination_id: str) -> sqlite3.Row | None:
-        with self.connect() as con:
+        with self.connection() as con:
             return con.execute(
                 "SELECT * FROM combination_settlements WHERE combination_id=? AND active=1 ORDER BY result_version DESC LIMIT 1",
                 (combination_id,),
@@ -365,7 +380,7 @@ class SQLiteStore:
     def leg_settlements(self, prediction_ids: list[str]) -> dict[str, sqlite3.Row]:
         if not prediction_ids:return {}
         marks=','.join('?' for _ in prediction_ids)
-        with self.connect() as con:
+        with self.connection() as con:
             rows=con.execute(
                 f"SELECT * FROM settlements WHERE active=1 AND prediction_id IN ({marks})",prediction_ids
             ).fetchall()
@@ -404,14 +419,14 @@ class SQLiteStore:
             )
 
     def active_settlement(self, prediction_id: str) -> sqlite3.Row | None:
-        with self.connect() as con:
+        with self.connection() as con:
             return con.execute(
                 "SELECT * FROM settlements WHERE prediction_id=? AND active=1 ORDER BY result_version DESC LIMIT 1",
                 (prediction_id,),
             ).fetchone()
 
     def latest_prediction_rows(self, limit: int = 200) -> list[sqlite3.Row]:
-        with self.connect() as con:
+        with self.connection() as con:
             return list(con.execute(
                 """
                 SELECT p.*, ml.reference_stake, ml.odds_at_prediction, ml.edge_pp_at_prediction,
@@ -425,7 +440,7 @@ class SQLiteStore:
                 """,(limit,)))
 
     def history_summary(self) -> dict[str, Any]:
-        with self.connect() as con:
+        with self.connection() as con:
             row=con.execute(
                 """
                 SELECT count(*) FILTER(WHERE s.status='CONFIRMED_SETTLEMENT' AND s.actual_hr_binary IS NOT NULL) n,

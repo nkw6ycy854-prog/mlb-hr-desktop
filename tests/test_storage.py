@@ -25,7 +25,7 @@ def test_prediction_revisions_latest_only(tmp_path:Path):
 def test_combination_settlement_tables_migrate(tmp_path:Path):
     root=Path(__file__).resolve().parents[1]
     st=SQLiteStore(tmp_path/'combo.db',root/'migrations');st.migrate()
-    with st.connect() as con:
+    with st.connection() as con:
         names={r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert 'combination_settlements' in names
 
