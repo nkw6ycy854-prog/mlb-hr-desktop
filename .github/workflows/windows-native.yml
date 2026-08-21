@@ -11,8 +11,8 @@ jobs:
     runs-on: windows-latest
 
     env:
-      EXPECTED_MODEL_HASH: a82a54ba6b49bce56081d7edd2abe1a08816673145fc4addc8f6e8fec82f342c
-      MODEL_PACKAGE_DIR: release_model/V1.0.0_predictive
+      EXPECTED_MODEL_HASH: 4f3296dcbe4fb932a6ebb7e0cabde9c5b33234be2ec1da07f29d10e7b50975ab
+      MODEL_PACKAGE_DIR: release_model/V1.0.0
 
     steps:
       - name: Checkout
