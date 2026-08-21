@@ -46,55 +46,123 @@ jobs:
           & ".\.venv\Scripts\python.exe" scripts/stage_model.py `
             --model-dir "$env:MODEL_PACKAGE_DIR"
 
-      - name: Build Windows executable
+      - name: Prepare Windows standalone spec
+        shell: pwsh
+        run: |
+          Copy-Item "pysidedeploy.spec" "pysidedeploy.windows.spec"
+
+          $spec = Get-Content "pysidedeploy.windows.spec"
+
+          # Windows: use standalone instead of onefile.
+          $spec = $spec -replace '^\s*mode\s*=.*$', 'mode = standalone'
+
+          # Never reuse a macOS icon path.
+          $spec = $spec -replace '^\s*icon\s*=.*$', 'icon ='
+
+          $spec | Set-Content -Encoding UTF8 "pysidedeploy.windows.spec"
+
+          Write-Host "========== WINDOWS SPEC =========="
+          Get-Content "pysidedeploy.windows.spec"
+          Write-Host "=================================="
+
+      - name: Build Windows standalone application
         shell: pwsh
         run: |
           $env:VIRTUAL_ENV = (Resolve-Path ".venv").Path
           $env:PATH = "$env:VIRTUAL_ENV\Scripts;$env:PATH"
 
-          Write-Host "VIRTUAL_ENV=$env:VIRTUAL_ENV"
-
-          # Never reuse a platform-specific icon path written by macOS.
-          $spec = Get-Content "pysidedeploy.spec"
-          $spec = $spec -replace '^\\s*icon\\s*=.*$', 'icon ='
-          $spec | Set-Content -Encoding UTF8 "pysidedeploy.windows.spec"
-
-          Write-Host "Windows deployment spec:"
-          Get-Content "pysidedeploy.windows.spec"
-
           & ".\.venv\Scripts\pyside6-deploy.exe" `
             --force `
             --verbose `
+            --keep-deployment-files `
             -c pysidedeploy.windows.spec
 
       - name: Locate executable and run native smoke test
         shell: pwsh
         run: |
-          $artifact = Get-ChildItem -Path build -Filter *.exe -Recurse |
+          $searchPaths = @(
+            "src\mlb_hr\deployment",
+            "build"
+          )
+
+          $artifact = Get-ChildItem `
+            -Path $searchPaths `
+            -Filter *.exe `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.Name -notmatch 'QtWebEngineProcess|python|assistant'
+            } |
             Select-Object -First 1
 
           if (-not $artifact) {
-            throw "No Windows .exe artifact was generated."
+            Write-Host "Files produced by deployment:"
+            Get-ChildItem `
+              -Path "src\mlb_hr\deployment","build" `
+              -Recurse `
+              -ErrorAction SilentlyContinue
+
+            throw "No Windows application .exe was generated."
           }
 
           Write-Host "Native artifact: $($artifact.FullName)"
 
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-
-          Copy-Item `
-            -Path $artifact.FullName `
-            -Destination "artifacts/MLB-HR-Windows.exe"
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path build_reports |
+            Out-Null
 
           & ".\.venv\Scripts\python.exe" scripts/native_smoke.py `
-            --artifact "artifacts/MLB-HR-Windows.exe" `
+            --artifact "$($artifact.FullName)" `
             --expected-model-hash "$env:EXPECTED_MODEL_HASH" `
             --output build_reports/windows.json
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows native smoke test failed."
+          }
+
+          $report = Get-Content build_reports/windows.json -Raw |
+            ConvertFrom-Json
+
+          if (-not $report.passed) {
+            throw "windows.json reports passed=false."
+          }
+
+          Write-Host "WINDOWS_NATIVE_SMOKE = PASS"
+
+          # Save path for packaging step.
+          $artifact.Directory.FullName |
+            Out-File `
+              -Encoding ascii `
+              -FilePath windows_bundle_path.txt
+
+      - name: Package Windows standalone application
+        shell: pwsh
+        run: |
+          $bundle = Get-Content windows_bundle_path.txt -Raw
+          $bundle = $bundle.Trim()
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path artifacts |
+            Out-Null
+
+          Compress-Archive `
+            -Path "$bundle\*" `
+            -DestinationPath "artifacts\MLB-HR-Windows.zip" `
+            -Force
+
+          Copy-Item `
+            build_reports/windows.json `
+            artifacts/windows.json
 
       - name: Upload Windows native artifact
         uses: actions/upload-artifact@v4
         with:
           name: MLB-HR-Windows-Native
           path: |
-            artifacts/MLB-HR-Windows.exe
-            build_reports/windows.json
+            artifacts/MLB-HR-Windows.zip
+            artifacts/windows.json
           if-no-files-found: error
