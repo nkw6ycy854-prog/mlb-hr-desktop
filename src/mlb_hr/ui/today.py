@@ -45,7 +45,7 @@ class TodayWidget(QWidget):
     def _loaded(self,result:SlateResult)->None:
         self.current=result;self.refresh_btn.setEnabled(True);self.status.setText("Actualización completa")
         self.health.setText(f"● MODELO {result.model_health.value}");self.health.setObjectName("good" if result.model_health.value=="GREEN" else "warning")
-        self.lineups.setText(f"{result.confirmed_lineups}/{result.total_games} LINEUPS")
+        self.lineups.setText(f"{result.confirmed_lineups}/{result.total_games} JUEGOS LISTOS")
         self.updated.setText("Actualizado "+result.updated_at.astimezone().strftime("%I:%M %p").lstrip("0"))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_table();self._render_combos()

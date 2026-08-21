@@ -268,9 +268,17 @@ class AnalysisService:
             messages.append("MODEL PACKAGE NO VALIDADO: no se emiten apuestas reales hasta completar walk-forward/holdout.")
         if ai_review_unavailable:
             messages.append("AI REVIEW UNAVAILABLE: el análisis determinista permanece activo.")
-        if confirmed<len(hydrated):messages.append(f"SLATE INCOMPLETO: {confirmed}/{len(hydrated)} juegos con ambos lineups confirmados.")
+        pending=max(0,len(hydrated)-confirmed)
+        if confirmed<len(hydrated):
+            messages.append(
+                f"{confirmed}/{len(hydrated)} JUEGOS LISTOS · {pending} ESPERANDO LINEUP. "
+                "Analizando únicamente juegos con ambos lineups confirmados."
+            )
         if not any(c.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY} for c in ranked):
-            messages.append("NO QUALIFIED HR BETS TODAY")
+            if confirmed>0:
+                messages.append("NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS")
+            else:
+                messages.append("ESPERANDO LINEUPS CONFIRMADOS")
         return SlateResult(ranked,combos,slate_quality,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),messages)
 
     def apply_manual_odds(self, card: PredictionCard, american_odds: int) -> PredictionCard:
