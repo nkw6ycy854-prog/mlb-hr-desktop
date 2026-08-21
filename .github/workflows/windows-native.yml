@@ -81,54 +81,41 @@ jobs:
       - name: Locate executable and run native smoke test
         shell: pwsh
         run: |
-          $bundleDir = Get-ChildItem `
-            -Path "build" `
-            -Directory `
-            -Filter "*.dist" `
-            -ErrorAction SilentlyContinue |
-            Select-Object -First 1
+          # pyside6-deploy invokes Nuitka with:
+          #   --output-dir=src\mlb_hr\deployment
+          # For src\mlb_hr\app.py in standalone mode, the canonical Nuitka
+          # output is src\mlb_hr\deployment\app.dist\app.exe.
+          # Use that canonical output directly instead of the copied build/*.dist folder.
+          $bundle = Join-Path $PWD "src\mlb_hr\deployment\app.dist"
 
-          if (-not $bundleDir) {
-            Write-Host "BUILD CONTENTS:"
-            Get-ChildItem -Path build -Recurse -ErrorAction SilentlyContinue
-            throw "No Nuitka .dist directory was generated."
+          if (-not (Test-Path $bundle)) {
+            Write-Host "DEPLOYMENT CONTENTS:"
+            Get-ChildItem -Path "src\mlb_hr\deployment" -Recurse -ErrorAction SilentlyContinue
+            throw "Canonical Nuitka standalone bundle was not found: $bundle"
           }
 
-          $bundle = $bundleDir.FullName
+          $artifactPath = Join-Path $bundle "app.exe"
 
-          Write-Host "=========================================="
-          Write-Host "STANDALONE BUNDLE FOUND:"
-          Write-Host $bundle
-          Write-Host "=========================================="
-
-          $candidates = Get-ChildItem `
-            -Path $bundle `
-            -Filter "*.exe" `
-            -File `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
-            Where-Object {
-              $_.Name -notmatch 'QtWebEngineProcess|python|assistant'
-            }
-
-          $artifact = $candidates |
-            Where-Object { $_.Name -ieq "app.exe" } |
-            Select-Object -First 1
-
-          if (-not $artifact) {
-            $artifact = $candidates |
-              Where-Object { $_.Name -match 'MLB.*HR.*\.exe' } |
+          if (Test-Path $artifactPath) {
+            $artifact = Get-Item $artifactPath
+          }
+          else {
+            $artifact = Get-ChildItem `
+              -Path $bundle `
+              -Filter "*.exe" `
+              -File `
+              -Recurse `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -notmatch 'QtWebEngineProcess|python|assistant'
+              } |
               Select-Object -First 1
           }
 
           if (-not $artifact) {
-            $artifact = $candidates | Select-Object -First 1
-          }
-
-          if (-not $artifact) {
-            Write-Host "BUNDLE CONTENTS:"
-            Get-ChildItem -Path $bundle -Recurse
-            throw "No application .exe exists inside the standalone bundle."
+            Write-Host "CANONICAL BUNDLE CONTENTS:"
+            Get-ChildItem -Path $bundle -Recurse -ErrorAction SilentlyContinue
+            throw "No application .exe exists inside canonical Nuitka app.dist."
           }
 
           Write-Host "=========================================="
@@ -159,6 +146,7 @@ jobs:
             ConvertFrom-Json
 
           if (-not $report.passed) {
+            Write-Host "windows.json:"
             Get-Content "build_reports\windows.json"
             throw "windows.json reports passed=false."
           }
