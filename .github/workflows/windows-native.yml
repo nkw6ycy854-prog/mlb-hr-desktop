@@ -56,6 +56,14 @@ jobs:
           $spec = $spec -replace '^\s*mode\s*=.*$', 'mode = standalone'
           $spec = $spec -replace '^\s*icon\s*=.*$', 'icon ='
 
+          # Nuitka requires Dependency Walker on Windows standalone builds.
+          # GitHub Actions is non-interactive, so explicitly allow the download.
+          if ($spec -match '^\s*extra_args\s*=') {
+            $spec = $spec -replace `
+              '^(\s*extra_args\s*=.*)$', `
+              '$1 --assume-yes-for-downloads'
+          }
+
           $spec | Set-Content -Encoding UTF8 "pysidedeploy.windows.spec"
 
           Write-Host "========== WINDOWS SPEC =========="
