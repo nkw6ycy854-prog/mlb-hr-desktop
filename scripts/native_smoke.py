@@ -28,12 +28,15 @@ def main()->int:
     p.add_argument('--artifact',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--expected-model-hash',default='')
+    p.add_argument('--require-runtime-data',action='store_true')
     a=p.parse_args()
     checks={'platform_correct':platform.system() in {'Darwin','Windows'},'standalone_artifact_exists':a.artifact.exists()}
     details={}
     try:
         exe=_artifact_executable(a.artifact);checks['artifact_executable_exists']=exe.exists();details['executable']=str(exe)
-        cp=subprocess.run([str(exe),'--self-test'],capture_output=True,text=True,timeout=90,check=False)
+        cmd=[str(exe),'--self-test']
+        if a.require_runtime_data:cmd.append('--require-runtime-data')
+        cp=subprocess.run(cmd,capture_output=True,text=True,timeout=90,check=False)
         details['self_test_returncode']=cp.returncode;details['self_test_stderr']=cp.stderr[-4000:]
         payload=json.loads(cp.stdout.strip())
         details['artifact_self_test']=payload

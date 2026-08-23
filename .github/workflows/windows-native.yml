@@ -183,9 +183,13 @@ jobs:
             -Path "artifacts" |
             Out-Null
 
+          Copy-Item "packaging\windows\MLB HR.bat" (Join-Path $bundle "MLB HR.bat") -Force
+          Copy-Item "packaging\windows\SELF TEST.bat" (Join-Path $bundle "SELF TEST.bat") -Force
+          Copy-Item "packaging\windows\README-WINDOWS.txt" (Join-Path $bundle "README-WINDOWS.txt") -Force
+
           Compress-Archive `
             -Path (Join-Path $bundle "*") `
-            -DestinationPath "artifacts\MLB-HR-Windows.zip" `
+            -DestinationPath "artifacts\MLB-HR-Windows-App.zip" `
             -CompressionLevel Optimal `
             -Force
 
@@ -196,7 +200,7 @@ jobs:
 
           Write-Host "=========================================="
           Write-Host "WINDOWS PACKAGE CREATED"
-          Write-Host "artifacts\MLB-HR-Windows.zip"
+          Write-Host "artifacts\MLB-HR-Windows-App.zip"
           Write-Host "=========================================="
 
       - name: Upload Windows native artifact
@@ -204,6 +208,6 @@ jobs:
         with:
           name: MLB-HR-Windows-Native
           path: |
-            artifacts/MLB-HR-Windows.zip
+            artifacts/MLB-HR-Windows-App.zip
             artifacts/windows.json
           if-no-files-found: error

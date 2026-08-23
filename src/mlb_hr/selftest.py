@@ -7,9 +7,20 @@ import sys
 import tempfile
 
 from mlb_hr.resources_runtime import bundled_model_text, packaged_migrations_dir
+from mlb_hr.storage.paths import resolve_app_paths
 
 
-def run_self_test()->dict:
+def runtime_statcast_status()->dict:
+    paths=resolve_app_paths()
+    files=list(paths.parquet_dir.glob("season=*/month=*/statcast_*.parquet"))
+    return {
+        "available":bool(files),
+        "parquet_count":len(files),
+        "parquet_dir":str(paths.parquet_dir),
+    }
+
+
+def run_self_test(*,require_runtime_data:bool=False)->dict:
     checks={}
     details={}
     checks['python_runtime']=sys.version_info[:2]==(3,13)
@@ -65,11 +76,20 @@ def run_self_test()->dict:
         checks['postgame_import']=PostgameEngine is not None
     except Exception as exc:
         checks['postgame_import']=False;details['postgame_error']=str(exc)
+    try:
+        runtime_data=runtime_statcast_status()
+        details['runtime_statcast']=runtime_data
+        if require_runtime_data:
+            checks['statcast_runtime_available']=bool(runtime_data['available'])
+    except Exception as exc:
+        details['runtime_statcast_error']=str(exc)
+        if require_runtime_data:
+            checks['statcast_runtime_available']=False
     result={'created_at':datetime.now(timezone.utc).isoformat(),'checks':checks,'details':details,'passed':all(checks.values())}
     return result
 
 
 def main()->int:
-    result=run_self_test();print(json.dumps(result,indent=2,sort_keys=True));return 0 if result['passed'] else 1
+    result=run_self_test(require_runtime_data='--require-runtime-data' in sys.argv);print(json.dumps(result,indent=2,sort_keys=True));return 0 if result['passed'] else 1
 
 if __name__=='__main__':raise SystemExit(main())

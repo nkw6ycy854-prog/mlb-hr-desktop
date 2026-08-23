@@ -6,6 +6,9 @@ import os
 import platform
 
 
+APP_DIR_NAME = "MLB HR"
+
+
 @dataclass(frozen=True, slots=True)
 class AppPaths:
     data_dir: Path
@@ -22,6 +25,13 @@ class AppPaths:
 
 
 def _qt_paths() -> tuple[Path, Path] | None:
+    """Deprecated compatibility hook.
+
+    Runtime paths intentionally no longer depend on QStandardPaths because its output
+    changes with QCoreApplication organization/application identity. Keeping this
+    function avoids breaking old imports/tests while resolve_app_paths stays stable in
+    CLI, source, and packaged GUI contexts.
+    """
     try:
         from PySide6.QtCore import QStandardPaths
 
@@ -38,13 +48,49 @@ def _fallback_paths() -> tuple[Path, Path]:
     system = platform.system()
     home = Path.home()
     if system == "Darwin":
-        return home / "Library" / "Application Support" / "MLBHR", home / "Library" / "Caches" / "MLBHR"
+        return (
+            home / "Library" / "Application Support" / APP_DIR_NAME,
+            home / "Library" / "Caches" / APP_DIR_NAME,
+        )
     if system == "Windows":
         local = Path(os.getenv("LOCALAPPDATA", home / "AppData" / "Local"))
-        return local / "MLBHR", local / "MLBHR" / "Cache"
+        return local / APP_DIR_NAME, local / APP_DIR_NAME / "Cache"
     xdg_data = Path(os.getenv("XDG_DATA_HOME", home / ".local" / "share"))
     xdg_cache = Path(os.getenv("XDG_CACHE_HOME", home / ".cache"))
-    return xdg_data / "MLBHR", xdg_cache / "MLBHR"
+    return xdg_data / APP_DIR_NAME, xdg_cache / APP_DIR_NAME
+
+
+def _has_statcast_data(path: Path) -> bool:
+    return any(path.glob("season=*/month=*/statcast_*.parquet"))
+
+
+def _legacy_statcast_dirs() -> list[Path]:
+    """Known locations used by older/identity-less builds.
+
+    The first entry on each platform is the accidental unscoped QStandardPaths
+    location produced when resolve_app_paths() ran before QApplication identity was
+    configured. The second is the original fallback directory used by this project.
+    """
+    system = platform.system()
+    home = Path.home()
+    if system == "Darwin":
+        base = home / "Library" / "Application Support"
+        return [base / "statcast", base / "MLBHR" / "statcast"]
+    if system == "Windows":
+        local = Path(os.getenv("LOCALAPPDATA", home / "AppData" / "Local"))
+        return [local / "statcast", local / "MLBHR" / "statcast"]
+    xdg_data = Path(os.getenv("XDG_DATA_HOME", home / ".local" / "share"))
+    return [xdg_data / "statcast", xdg_data / "MLBHR" / "statcast"]
+
+
+def _resolve_statcast_dir(canonical_data_dir: Path) -> Path:
+    canonical = canonical_data_dir / "statcast"
+    if _has_statcast_data(canonical):
+        return canonical
+    for candidate in _legacy_statcast_dirs():
+        if candidate != canonical and _has_statcast_data(candidate):
+            return candidate
+    return canonical
 
 
 def resolve_app_paths() -> AppPaths:
@@ -52,14 +98,17 @@ def resolve_app_paths() -> AppPaths:
     if override:
         data = Path(override).expanduser().resolve()
         cache = data / "cache"
+        parquet = data / "statcast"
     else:
-        paths = _qt_paths() or _fallback_paths()
-        data, cache = paths
+        # Deliberately deterministic: do not depend on QApplication/QCoreApplication
+        # identity. CLI diagnostics and the packaged GUI must resolve the same paths.
+        data, cache = _fallback_paths()
+        parquet = _resolve_statcast_dir(data)
     return AppPaths(
         data_dir=data,
         cache_dir=cache,
         log_dir=data / "logs",
         db_path=data / "app.db",
-        parquet_dir=data / "statcast",
+        parquet_dir=parquet,
         model_dir=data / "models",
     ).ensure()

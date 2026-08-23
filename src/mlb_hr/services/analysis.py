@@ -82,6 +82,18 @@ class AnalysisService:
         confirmed=sum(1 for g in hydrated if g.away_lineup and g.away_lineup.confirmed and g.home_lineup and g.home_lineup.confirmed)
         slate_quality=SlateQuality.GREEN if confirmed==len(hydrated) and hydrated else SlateQuality.YELLOW
         model_health=ModelHealth.GREEN if self.package.release_ready else ModelHealth.YELLOW
+        if not self.analytics.has_data():
+            messages=[
+                "DATOS HISTÓRICOS NO DISPONIBLES: el análisis HR está bloqueado hasta que Statcast local esté disponible."
+            ]
+            pending=max(0,len(hydrated)-confirmed)
+            if confirmed<len(hydrated):
+                messages.append(
+                    f"{confirmed}/{len(hydrated)} JUEGOS LISTOS · {pending} ESPERANDO LINEUP."
+                )
+            return SlateResult(
+                [],[],SlateQuality.RED,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),messages
+            )
         predictive_cards: list[PredictionCard]=[]
         ai_context: dict[str,tuple[CandidateFeatureBundle,object,CriticResult,list[DataWarning]]]={}
         game_lookup: dict[int,GameContext]={g.game_pk:g for g in hydrated}
