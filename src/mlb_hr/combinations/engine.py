@@ -4,33 +4,43 @@ from itertools import combinations
 import math
 from uuid import uuid4
 
-from mlb_hr.domain.enums import ModelClassification
+from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification
 from mlb_hr.domain.models import Combination, CombinationLeg, PredictionCard
 
 
 class CombinationEngine:
     def build(self, cards: list[PredictionCard]) -> list[Combination]:
-        eligible=[c for c in cards if c.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}]
+        valid=[c for c in cards if c.prediction.classification!=ModelClassification.NOT_ELIGIBLE]
+        qualified=[c for c in valid if c.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}]
         out: list[Combination]=[]
-        best2=self._best(eligible,2,"BEST_2_MAN",longshot=False)
+        best2=self._pick(qualified,valid,2,"BEST_2_MAN",longshot=False)
         if best2: out.append(best2)
-        best3=self._best(eligible,3,"BEST_3_MAN",longshot=False)
+        best3=self._pick(qualified,valid,3,"BEST_3_MAN",longshot=False)
         if best3: out.append(best3)
-        # Long shots remain integrity-qualified; choose from secondary/lower-probability eligible candidates,
-        # not WATCH/NO_BET.
-        long_pool=sorted(eligible,key=lambda c:c.prediction.final_hr_probability)
-        long2=self._best(long_pool[:max(6,len(long_pool)//2)],2,"LONG_SHOT_2_MAN",longshot=True)
+        # Long shots draw from the lower-probability end of each pool.
+        qualified_long=sorted(qualified,key=lambda c:c.prediction.final_hr_probability)
+        valid_long=sorted(valid,key=lambda c:c.prediction.final_hr_probability)
+        long2=self._pick(qualified_long[:max(6,len(qualified_long)//2)],valid_long[:max(6,len(valid_long)//2)],2,"LONG_SHOT_2_MAN",longshot=True)
         if long2: out.append(long2)
-        long3=self._best(long_pool[:max(7,len(long_pool)//2)],3,"LONG_SHOT_3_MAN",longshot=True)
+        long3=self._pick(qualified_long[:max(7,len(qualified_long)//2)],valid_long[:max(7,len(valid_long)//2)],3,"LONG_SHOT_3_MAN",longshot=True)
         if long3: out.append(long3)
         return out
 
-    def _best(self,cards:list[PredictionCard],n:int,kind:str,longshot:bool)->Combination|None:
+    def _pick(self,qualified_pool:list[PredictionCard],valid_pool:list[PredictionCard],n:int,kind:str,longshot:bool)->Combination|None:
+        # The official "at least one PRIMARY" rule for BEST_3_MAN only governs the qualified pool;
+        # a fallback combination may have zero PRIMARY legs available at all.
+        require_primary=(not longshot) and n==3
+        combo=self._best(qualified_pool,n,kind,longshot,filter_status=CombinationFilterStatus.QUALIFIED,require_primary=require_primary)
+        if combo: return combo
+        combo=self._best(valid_pool,n,kind,longshot,filter_status=CombinationFilterStatus.FALLBACK,require_primary=False)
+        if combo: combo.warnings.append("FALLBACK_UNQUALIFIED_LEGS")
+        return combo
+
+    def _best(self,cards:list[PredictionCard],n:int,kind:str,longshot:bool,*,filter_status:CombinationFilterStatus,require_primary:bool)->Combination|None:
         if len(cards)<n:return None
         best=None;best_score=-1.0
         for combo in combinations(cards,n):
-            # Never force an uncertain secondary third leg into BEST_3.
-            if not longshot and n==3 and sum(1 for c in combo if c.prediction.classification==ModelClassification.PRIMARY)<1:
+            if require_primary and sum(1 for c in combo if c.prediction.classification==ModelClassification.PRIMARY)<1:
                 continue
             probs=[c.prediction.final_hr_probability for c in combo]
             joint=math.prod(probs)
@@ -52,6 +62,6 @@ class CombinationEngine:
                 legs=[CombinationLeg(c.prediction.prediction_id,c.prediction.player.player_id,c.prediction.player.full_name,c.prediction.final_hr_probability,c.prediction.classification,c.prediction.game_pk) for c in combo]
                 warnings=[]
                 if shared_games<n:warnings.append("SHARED_GAME_UNCERTAINTY")
-                best=Combination(str(uuid4()),kind,legs,joint,robustness,None,estimated if odds_available else None,warnings)
+                best=Combination(str(uuid4()),kind,legs,joint,robustness,filter_status,None,estimated if odds_available else None,warnings)
                 best_score=score
         return best
