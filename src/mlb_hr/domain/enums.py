@@ -18,6 +18,11 @@ class ModelClassification(StrEnum):
     NOT_ELIGIBLE = "NOT_ELIGIBLE"
 
 
+class CombinationFilterStatus(StrEnum):
+    QUALIFIED = "QUALIFIED"
+    FALLBACK = "FALLBACK"
+
+
 class UserActionLabel(StrEnum):
     RECOMMENDED = "RECOMENDADO"
     OPTIONAL = "OPCIONAL"

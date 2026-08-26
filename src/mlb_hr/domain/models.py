@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from .enums import (
+    CombinationFilterStatus,
     ConfidenceLabel,
     CriticVerdict,
     DataFreshness,
@@ -280,6 +281,7 @@ class Combination:
     legs: list[CombinationLeg]
     model_probability_proxy: float
     robustness: float
+    filter_status: CombinationFilterStatus
     actual_parlay_american_odds: int | None = None
     estimated_decimal_odds: float | None = None
     warnings: list[str] = field(default_factory=list)

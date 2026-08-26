@@ -21,3 +21,8 @@ def test_unvalidated_package_cannot_recommend():
 
 def test_combinations_never_force_unqualified_legs():
     assert CombinationEngine().build([])==[]
+
+
+def test_combination_filter_status_values_are_stable():
+    assert CombinationFilterStatus.QUALIFIED.value == "QUALIFIED"
+    assert CombinationFilterStatus.FALLBACK.value == "FALLBACK"
