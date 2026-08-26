@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from mlb_hr.domain.enums import ModelClassification
 
@@ -48,3 +50,10 @@ def quote_display(card) -> QuoteDisplay:
     else:
         fanduel_text = f"FanDuel {fanduel_quote.american_odds:+d}"
     return QuoteDisplay(best_text=best_text, fanduel_text=fanduel_text)
+
+
+def format_local_time(dt: datetime | None, timezone_name: str) -> str:
+    if dt is None:
+        return "—"
+    text = dt.astimezone(ZoneInfo(timezone_name)).strftime("%I:%M %p")
+    return text.lstrip("0") or text

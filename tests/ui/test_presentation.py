@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from mlb_hr.domain.enums import ModelClassification
-from mlb_hr.ui.presentation import practical_status, quote_display, visible_cards
+from mlb_hr.ui.presentation import format_local_time, practical_status, quote_display, visible_cards
 
 
 def test_practical_status_mapping():
@@ -42,3 +43,12 @@ def test_quote_display_avoids_duplicate_when_fanduel_is_best():
     qd = quote_display(card)
     assert qd.best_text == "FanDuel +430 · MEJOR CUOTA"
     assert qd.fanduel_text is None
+
+
+def test_format_local_time_converts_to_configured_timezone():
+    dt = datetime(2026, 8, 26, 23, 5, tzinfo=timezone.utc)
+    assert format_local_time(dt, "America/Santo_Domingo") == "7:05 PM"
+
+
+def test_format_local_time_handles_missing_datetime():
+    assert format_local_time(None, "UTC") == "—"

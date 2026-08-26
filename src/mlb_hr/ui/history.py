@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QFrame, QGridLayout, QHBoxLayout,
@@ -7,6 +10,18 @@ from PySide6.QtWidgets import (
 )
 
 from mlb_hr.services.history import HistoryFilter, HistoryService
+from mlb_hr.ui.presentation import format_local_time
+
+
+def _default_timezone_name() -> str:
+    try:
+        key = getattr(datetime.now().astimezone().tzinfo, "key", None)
+        if key:
+            ZoneInfo(key)  # validate it is a usable IANA identifier
+            return key
+    except Exception:
+        pass
+    return "UTC"
 
 PLAYER_TABLE_HEADERS = ["Fecha", "Hora", "Jugador", "HR%", "Estado", "Cuota", "Resultado"]
 COMBINATION_TABLE_HEADERS = ["Fecha", "Inicio", "Tipo", "Selecciones", "Filtro", "Cuota", "Resultado", "P/L"]
@@ -21,6 +36,7 @@ class HistoryWidget(QWidget):
         super().__init__(parent)
         self.store = store
         self.history_service = HistoryService(store)
+        self.timezone_name = store.get_state("timezone_name", None) or _default_timezone_name()
         self._period = "ALL"
         self._player_records: list = []
         self._combination_records: list = []
@@ -200,7 +216,7 @@ class HistoryWidget(QWidget):
         self.players_table.setRowCount(len(records))
         for r, rec in enumerate(records):
             date_text = rec.created_at.date().isoformat() if rec.created_at else "—"
-            time_text = rec.game_time.strftime("%H:%M") if rec.game_time else "—"
+            time_text = format_local_time(rec.game_time, self.timezone_name)
             odds_text = f"{int(rec.odds_at_prediction):+d}" if rec.odds_at_prediction is not None else "—"
             vals = [date_text, time_text, rec.player_name, f"{rec.final_probability*100:.1f}%", rec.status, odds_text, rec.result]
             for c, v in enumerate(vals):
@@ -215,7 +231,7 @@ class HistoryWidget(QWidget):
         self.combinations_table.setRowCount(len(records))
         for r, rec in enumerate(records):
             date_text = rec.created_at.date().isoformat() if rec.created_at else "—"
-            start_text = rec.start_time.strftime("%H:%M") if rec.start_time else "—"
+            start_text = format_local_time(rec.start_time, self.timezone_name)
             selections = " + ".join(leg.player_name for leg in rec.legs)
             odds_text = f"{rec.estimated_decimal_odds:.2f}" if rec.estimated_decimal_odds else "—"
             pl_text = f"${rec.pnl:+.2f}" if rec.pnl is not None else "—"
@@ -257,7 +273,7 @@ class HistoryWidget(QWidget):
         self.detail_layout.insertWidget(0, title)
         idx = 1
         for leg in record.legs:
-            time_text = leg.game_time.strftime("%H:%M") if leg.game_time else "—"
+            time_text = format_local_time(leg.game_time, self.timezone_name)
             lab = QLabel(f"{leg.player_name} · {leg.classification} · {time_text}")
             self.detail_layout.insertWidget(idx, lab)
             idx += 1
