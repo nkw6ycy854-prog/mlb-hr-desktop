@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from mlb_hr.domain.enums import (
+    CombinationFilterStatus,
     ConfidenceLabel,
     CriticVerdict,
     IntegrityStatus,
@@ -14,6 +15,8 @@ from mlb_hr.domain.enums import (
     UserActionLabel,
 )
 from mlb_hr.domain.models import (
+    Combination,
+    CombinationLeg,
     MarketDecision,
     PlayerRef,
     Prediction,
@@ -73,6 +76,28 @@ def _make_service():
     return SimpleNamespace(stake=10.0)
 
 
+def _make_combo(kind, filter_status, legs):
+    return Combination(
+        combination_id=f"combo-{kind}",
+        kind=kind,
+        legs=legs,
+        model_probability_proxy=0.05,
+        robustness=80.0,
+        filter_status=filter_status,
+        actual_parlay_american_odds=None,
+        estimated_decimal_odds=None,
+        warnings=[],
+    )
+
+
+def _combo_frame_texts(widget) -> str:
+    texts = []
+    for frame in widget._combo_frames:
+        for label in frame.findChildren(QLabel):
+            texts.append(label.text())
+    return "\n".join(texts)
+
+
 def test_today_defaults_to_top_15_and_can_expand():
     app()
     widget = TodayWidget(_make_service(), None)
@@ -127,4 +152,59 @@ def test_today_layout_is_responsive():
     widget.combo_grid.reflow()
     assert widget.main_pair.column_count == 1
     assert widget.combo_grid.column_count == 1
+
+
+def test_combo_cards_label_qualified_and_fallback_with_leg_classifications():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    legs_qualified = [
+        CombinationLeg("p1", 1, "Aaron Judge", 0.2, ModelClassification.PRIMARY, 100),
+        CombinationLeg("p2", 2, "Juan Soto", 0.18, ModelClassification.SECONDARY, 101),
+    ]
+    legs_fallback = [
+        CombinationLeg("p3", 3, "Player C", 0.1, ModelClassification.WATCH, 102),
+        CombinationLeg("p4", 4, "Player D", 0.08, ModelClassification.NO_BET, 103),
+    ]
+    combos = [
+        _make_combo("BEST_2_MAN", CombinationFilterStatus.QUALIFIED, legs_qualified),
+        _make_combo("LONG_SHOT_2_MAN", CombinationFilterStatus.FALLBACK, legs_fallback),
+    ]
+    result = SlateResult(
+        cards=[],
+        combinations=combos,
+        slate_quality=SlateQuality.GREEN,
+        model_health=ModelHealth.GREEN,
+        confirmed_lineups=15,
+        total_games=15,
+        updated_at=datetime.now(timezone.utc),
+    )
+    widget.current = result
+    widget._render_combos()
+    combined = _combo_frame_texts(widget)
+
+    assert "✅ CUMPLE FILTRO · RECOMENDADA" in combined
+    assert "⚠ NO CUMPLE FILTRO · ALTO RIESGO" in combined
+    assert "Aaron Judge · PRIMARY" in combined
+    assert "Juan Soto · SECONDARY" in combined
+    assert "Player C · WATCH" in combined
+    assert "Player D · NO_BET" in combined
+
+
+def test_combo_card_shows_not_enough_players_message_when_missing():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    result = SlateResult(
+        cards=[],
+        combinations=[],
+        slate_quality=SlateQuality.GREEN,
+        model_health=ModelHealth.GREEN,
+        confirmed_lineups=15,
+        total_games=15,
+        updated_at=datetime.now(timezone.utc),
+    )
+    widget.current = result
+    widget._render_combos()
+    combined = _combo_frame_texts(widget)
+
+    assert "NO HAY SUFICIENTES JUGADORES ANALIZADOS" in combined
 

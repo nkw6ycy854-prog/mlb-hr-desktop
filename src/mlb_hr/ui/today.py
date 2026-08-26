@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,QSpinBox,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
-from mlb_hr.domain.enums import ModelClassification, ModelHealth, SlateQuality
+from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth, SlateQuality
 from mlb_hr.domain.models import PredictionCard, SlateResult
 from mlb_hr.ui.components import ResponsiveGrid
 from mlb_hr.ui.presentation import display_quote, practical_status, visible_cards
@@ -140,9 +140,14 @@ class TodayWidget(QWidget):
         for kind,label in [("BEST_2_MAN","BEST 2-MAN"),("BEST_3_MAN","BEST 3-MAN"),("LONG_SHOT_2_MAN","LONG-SHOT 2-MAN"),("LONG_SHOT_3_MAN","LONG-SHOT 3-MAN")]:
             frame=QFrame();frame.setObjectName("card");lay=QVBoxLayout(frame);title=QLabel(label);title.setStyleSheet("font-weight:700");lay.addWidget(title)
             combo=combos.get(kind)
-            if not combo:lay.addWidget(QLabel("NO HAY COMBINACIÓN\nSUFICIENTEMENTE SÓLIDA"))
+            if not combo:
+                lay.addWidget(QLabel("NO HAY SUFICIENTES JUGADORES ANALIZADOS"))
             else:
-                lay.addWidget(QLabel(" + ".join(l.player_name for l in combo.legs)))
+                qualified=combo.filter_status==CombinationFilterStatus.QUALIFIED
+                status_text="✅ CUMPLE FILTRO · RECOMENDADA" if qualified else "⚠ NO CUMPLE FILTRO · ALTO RIESGO"
+                status_label=QLabel(status_text);status_label.setObjectName("good" if qualified else "warning");lay.addWidget(status_label)
+                for leg in combo.legs:
+                    lay.addWidget(QLabel(f"{leg.player_name} · {leg.classification.value}"))
                 if combo.estimated_decimal_odds:
                     total=self.service.stake*combo.estimated_decimal_odds;lay.addWidget(QLabel(f"Pago estimado · ${self.service.stake:.0f} → ${total:.2f}"))
                 else:lay.addWidget(QLabel("SIN CUOTA CONJUNTA"))
