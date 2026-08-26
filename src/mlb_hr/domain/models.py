@@ -262,6 +262,7 @@ class MarketDecision:
 class PredictionCard:
     prediction: Prediction
     market: MarketDecision
+    best_market: MarketDecision | None = None
 
 
 @dataclass(slots=True)

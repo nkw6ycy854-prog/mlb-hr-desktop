@@ -241,22 +241,7 @@ class AnalysisService:
         # Odds are fetched only after predictive qualification. The prediction object is never
         # recomputed from price. WATCH/NO_BET rows are still pregame-locked for calibration
         # tracking, but they do not consume odds quota.
-        by_game: dict[int,list[PredictionCard]]={}
-        for card in predictive_cards:
-            if card.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}:
-                by_game.setdefault(card.prediction.game_pk,[]).append(card)
-        for game_pk,cards in by_game.items():
-            game=game_lookup[game_pk]
-            quotes=[]
-            if self.odds is not None:
-                qres=self.odds.fetch_fanduel_hr_quotes(game)
-                quotes=qres.data or []
-            qmap={q.player_id:q for q in quotes}
-            for card in cards:
-                quote=qmap.get(card.prediction.player.player_id)
-                card.market=self.market.evaluate(card.prediction.final_hr_probability,quote,self.stake)
-                if quote:
-                    self.store.save_odds(quote,card.prediction.prediction_id,is_at_prediction=True)
+        self._assign_market_and_odds(predictive_cards,game_lookup)
 
         for card in predictive_cards:
             p=card.prediction
@@ -292,6 +277,35 @@ class AnalysisService:
             else:
                 messages.append("ESPERANDO LINEUPS CONFIRMADOS")
         return SlateResult(ranked,combos,slate_quality,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),messages)
+
+    def _assign_market_and_odds(self,predictive_cards:list[PredictionCard],game_lookup:dict[int,GameContext])->None:
+        by_game: dict[int,list[PredictionCard]]={}
+        for card in predictive_cards:
+            if card.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}:
+                by_game.setdefault(card.prediction.game_pk,[]).append(card)
+        for game_pk,cards in by_game.items():
+            game=game_lookup[game_pk]
+            quotes=[]
+            if self.odds is not None:
+                qres=self.odds.fetch_us_hr_quotes(game)
+                quotes=qres.data or []
+            by_player: dict[int,list] = {}
+            for quote in quotes:
+                by_player.setdefault(quote.player_id,[]).append(quote)
+            for card in cards:
+                player_quotes=by_player.get(card.prediction.player.player_id,[])
+                fanduel_quote=next((quote for quote in player_quotes if quote.bookmaker.lower()=="fanduel"),None)
+                best_quote=max(
+                    (quote for quote in player_quotes if quote.decimal_odds is not None),
+                    key=lambda quote:quote.decimal_odds,
+                    default=None,
+                )
+                card.market=self.market.evaluate(card.prediction.final_hr_probability,fanduel_quote,self.stake)
+                card.best_market=self.market.evaluate(card.prediction.final_hr_probability,best_quote,self.stake)
+                for quote in player_quotes:
+                    self.store.save_odds(quote,card.prediction.prediction_id,is_at_prediction=False)
+                if fanduel_quote:
+                    self.store.save_odds(fanduel_quote,card.prediction.prediction_id,is_at_prediction=True)
 
     def apply_manual_odds(self, card: PredictionCard, american_odds: int) -> PredictionCard:
         if card.prediction.classification not in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}:
