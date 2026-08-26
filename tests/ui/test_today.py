@@ -208,3 +208,36 @@ def test_combo_card_shows_not_enough_players_message_when_missing():
 
     assert "NO HAY SUFICIENTES JUGADORES ANALIZADOS" in combined
 
+
+def _detail_texts(widget) -> str:
+    return "\n".join(label.text() for label in widget.detail.findChildren(QLabel))
+
+
+def test_detail_panel_shows_best_and_fanduel_when_different():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    card = _make_card(0, 0.3)
+    card.market = SimpleNamespace(quote=SimpleNamespace(bookmaker="FanDuel", american_odds=390))
+    card.best_market = SimpleNamespace(quote=SimpleNamespace(bookmaker="DraftKings", american_odds=430))
+
+    widget._show_detail(card)
+    texts = _detail_texts(widget)
+
+    assert "DraftKings +430 · MEJOR CUOTA" in texts
+    assert "FanDuel +390" in texts
+
+
+def test_detail_panel_avoids_duplicate_fanduel_line_when_best():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    card = _make_card(0, 0.3)
+    fanduel_quote = SimpleNamespace(bookmaker="FanDuel", american_odds=430)
+    card.market = SimpleNamespace(quote=fanduel_quote)
+    card.best_market = SimpleNamespace(quote=fanduel_quote)
+
+    widget._show_detail(card)
+    texts = _detail_texts(widget)
+
+    assert texts.count("FanDuel") == 1
+    assert "FanDuel +430 · MEJOR CUOTA" in texts
+

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth, SlateQuality
 from mlb_hr.domain.models import PredictionCard, SlateResult
 from mlb_hr.ui.components import ResponsiveGrid
-from mlb_hr.ui.presentation import display_quote, practical_status, visible_cards
+from mlb_hr.ui.presentation import display_quote, practical_status, quote_display, visible_cards
 from mlb_hr.ui.workers import FunctionWorker
 
 
@@ -99,8 +99,10 @@ class TodayWidget(QWidget):
         prob=QLabel(f"HR%\n{p.final_hr_probability*100:.1f}%");prob.setAlignment(Qt.AlignmentFlag.AlignCenter);prob.setStyleSheet("font-size:20px;font-weight:700;padding:10px;");self.detail_layout.addWidget(prob)
         status=practical_status(p.classification)
         conf=QLabel(f"{status} · {p.classification.value} · {p.confidence_label.value} CONFIANZA");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setObjectName("good" if status=="RECOMENDADO" else "warning");self.detail_layout.addWidget(conf)
-        best=QLabel(f"MEJOR CUOTA\n{display_quote(card,best=True)}");best.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(best)
-        fanduel=QLabel(f"FANDUEL\n{display_quote(card,best=False)}");fanduel.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(fanduel)
+        qd=quote_display(card)
+        best=QLabel(qd.best_text);best.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(best)
+        if qd.fanduel_text:
+            fanduel=QLabel(qd.fanduel_text);fanduel.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(fanduel)
         if p.reasons:
             why=QLabel("¿POR QUÉ?");why.setStyleSheet("font-weight:700;margin-top:8px;");self.detail_layout.addWidget(why)
             for reason in p.reasons[:4]:
