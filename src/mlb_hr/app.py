@@ -18,6 +18,7 @@ def main()->int:
     from mlb_hr.config import CONFIG
     from mlb_hr.services.bootstrap import build_services
     from mlb_hr.services.demo import DemoAnalysisService
+    from mlb_hr.services.health import HealthService
     from mlb_hr.services.settlement import SettlementService
     from mlb_hr.ui.main_window import MainWindow
     from mlb_hr.ui.workers import FunctionWorker
@@ -27,8 +28,19 @@ def main()->int:
     from mlb_hr.observability import configure_logging
     configure_logging(paths.log_dir)
     service=DemoAnalysisService(float(store.get_state("default_stake",10.0))) if CONFIG.demo_mode else real_service
-    window=MainWindow(service,store);window.show()
-    QTimer.singleShot(200,window.today.refresh)
+    window=MainWindow(service,store,paths);window.show()
+
+    def start_health():
+        # Health checks always inspect the real service (package/analytics/odds), never the
+        # demo-mode wrapper, which intentionally has no runtime dependencies of its own.
+        worker=FunctionWorker(HealthService(real_service,paths,store).run)
+        window._health_worker=worker
+        worker.signals.finished.connect(window.apply_health_report)
+        worker.signals.error.connect(window.apply_health_error)
+        QThreadPool.globalInstance().start(worker)
+
+    window.health_retry_callback=start_health
+    QTimer.singleShot(50,start_health)
     if not CONFIG.demo_mode:
         # Result reconciliation runs off the UI thread and never changes predictive weights.
         def start_settlement_reconcile():

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,QSpinBox,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
-from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth, SlateQuality
+from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth
 from mlb_hr.domain.models import PredictionCard, SlateResult
 from mlb_hr.ui.components import ResponsiveGrid
 from mlb_hr.ui.presentation import display_quote, practical_status, quote_display, visible_cards
@@ -19,6 +19,7 @@ from mlb_hr.ui.workers import FunctionWorker
 class TodayWidget(QWidget):
     def __init__(self,analysis_service,store=None,parent=None)->None:
         super().__init__(parent);self.service=analysis_service;self.store=store;self.thread_pool=QThreadPool.globalInstance();self.current:SlateResult|None=None;self._cards:list[PredictionCard]=[]
+        self._on_open_settings=None;self._on_retry=None
         self._build()
 
     def _build(self)->None:
@@ -33,8 +34,19 @@ class TodayWidget(QWidget):
         meta.addStretch()
         root.addLayout(meta)
         self.banner=QLabel("");self.banner.setWordWrap(True);self.banner.hide();root.addWidget(self.banner)
+
+        self.health_failure_frame=QFrame();self.health_failure_frame.setObjectName("card");self.health_failure_frame.hide()
+        hf_layout=QVBoxLayout(self.health_failure_frame)
+        self.health_title=QLabel("");self.health_title.setObjectName("section");hf_layout.addWidget(self.health_title)
+        self.health_detail=QLabel("");self.health_detail.setWordWrap(True);hf_layout.addWidget(self.health_detail)
+        hf_buttons=QHBoxLayout()
+        self.health_open_settings_btn=QPushButton("ABRIR AJUSTES");self.health_open_settings_btn.clicked.connect(self._handle_open_settings);hf_buttons.addWidget(self.health_open_settings_btn)
+        self.health_retry_btn=QPushButton("REINTENTAR");self.health_retry_btn.setObjectName("primaryButton");self.health_retry_btn.clicked.connect(self._handle_retry);hf_buttons.addWidget(self.health_retry_btn)
+        hf_layout.addLayout(hf_buttons)
+        root.addWidget(self.health_failure_frame)
+
         sec_row=QHBoxLayout()
-        sec=QLabel("MEJORES HR DEL DÍA");sec.setObjectName("section");sec_row.addWidget(sec);sec_row.addStretch()
+        self.ranking_section_label=QLabel("MEJORES HR DEL DÍA");self.ranking_section_label.setObjectName("section");sec_row.addWidget(self.ranking_section_label);sec_row.addStretch()
         self.expanded=False
         self.view_all_btn=QPushButton("VER TODOS");self.view_all_btn.clicked.connect(self.toggle_all);sec_row.addWidget(self.view_all_btn)
         root.addLayout(sec_row)
@@ -42,7 +54,7 @@ class TodayWidget(QWidget):
         self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Expanding)
         self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail()
         self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);root.addWidget(self.main_pair,1)
-        combo_label=QLabel("COMBINACIONES");combo_label.setObjectName("section");root.addWidget(combo_label)
+        self.combo_section_label=QLabel("COMBINACIONES");self.combo_section_label.setObjectName("section");root.addWidget(self.combo_section_label)
         self.combo_grid=ResponsiveGrid(two_column_min_width=760);self._combo_frames:list[QFrame]=[];root.addWidget(self.combo_grid)
 
     def refresh(self)->None:
@@ -50,9 +62,9 @@ class TodayWidget(QWidget):
         worker=FunctionWorker(self.service.analyze_slate);worker.signals.finished.connect(self._loaded);worker.signals.error.connect(self._error);self.thread_pool.start(worker)
 
     def _loaded(self,result:SlateResult)->None:
+        self.hide_health_failure()
         self.current=result;self.refresh_btn.setEnabled(True);self.status.setText("Actualización completa")
         self.model_status.setText(f"● Modelo {result.model_health.value}");self.model_status.setObjectName("good" if result.model_health==ModelHealth.GREEN else "warning")
-        self.data_status.setText(f"● Datos {result.slate_quality.value}");self.data_status.setObjectName("good" if result.slate_quality==SlateQuality.GREEN else "warning")
         self.lineups.setText(f"{result.confirmed_lineups}/{result.total_games} juegos listos")
         self.updated.setText("Actualizado "+result.updated_at.astimezone().strftime("%I:%M %p").lstrip("0"))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
@@ -60,6 +72,36 @@ class TodayWidget(QWidget):
 
     def _error(self,msg:str)->None:
         self.refresh_btn.setEnabled(True);self.status.setText("Error al actualizar");QMessageBox.warning(self,"Actualización",msg)
+
+    def apply_health_report(self,report)->None:
+        statcast_item=next((i for i in report.items if i.key=="statcast"),None)
+        db_item=next((i for i in report.items if i.key=="database"),None)
+        data_ok=(statcast_item is None or statcast_item.state=="OK") and (db_item is None or db_item.state=="OK")
+        self.data_status.setText(f"● Datos {'OK' if data_ok else 'ERROR'}")
+        self.data_status.setObjectName("good" if data_ok else "warning")
+
+    def show_health_failure(self,report,*,on_open_settings,on_retry)->None:
+        self._on_open_settings=on_open_settings;self._on_retry=on_retry
+        self.apply_health_report(report)
+        failing=[item for item in report.items if item.state=="ERROR"]
+        first=failing[0] if failing else None
+        title_text=f"⚠ {first.label.upper()} NO DISPONIBLE" if first else "⚠ PROBLEMA CRÍTICO DETECTADO"
+        detail_text=first.detail if first else "Se detectó un problema crítico de runtime."
+        self.health_title.setText(title_text);self.health_detail.setText(detail_text)
+        self.health_failure_frame.setVisible(True)
+        self.ranking_section_label.setVisible(False);self.main_pair.setVisible(False)
+        self.combo_section_label.setVisible(False);self.combo_grid.setVisible(False)
+
+    def hide_health_failure(self)->None:
+        self.health_failure_frame.setVisible(False)
+        self.ranking_section_label.setVisible(True);self.main_pair.setVisible(True)
+        self.combo_section_label.setVisible(True);self.combo_grid.setVisible(True)
+
+    def _handle_open_settings(self)->None:
+        if self._on_open_settings:self._on_open_settings()
+
+    def _handle_retry(self)->None:
+        if self._on_retry:self._on_retry()
 
     def toggle_all(self)->None:
         self.expanded=not self.expanded

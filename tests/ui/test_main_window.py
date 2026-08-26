@@ -14,7 +14,7 @@ def test_sidebar_navigation_changes_page(monkeypatch):
     QApplication.instance() or QApplication([])
     monkeypatch.setattr(mw, "TodayWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "HistoryWidget", lambda *_: DummyPage())
-    monkeypatch.setattr(mw, "SettingsWidget", lambda *_: DummyPage())
+    monkeypatch.setattr(mw, "SettingsWidget", lambda *_, **__: DummyPage())
     w = mw.MainWindow(object(), object())
     assert w.pages.currentIndex() == 0
     QTest.mouseClick(w.nav_history, Qt.MouseButton.LeftButton)

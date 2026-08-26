@@ -20,14 +20,16 @@ from mlb_hr.ui.today import TodayWidget
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, analysis_service, store, parent=None) -> None:
+    def __init__(self, analysis_service, store, paths=None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("MLB HR")
         self.resize(1180, 760)
+        self.paths = paths
+        self.health_retry_callback = None
 
         self.today = TodayWidget(analysis_service, store)
         self.history = HistoryWidget(store)
-        self.settings = SettingsWidget(store)
+        self.settings = SettingsWidget(store, paths=paths)
 
         self.pages = QStackedWidget()
         self.pages.addWidget(make_scroll_page(self.today))
@@ -83,3 +85,23 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         if index == 1:
             self.history.refresh()
+
+    def apply_health_report(self, report) -> None:
+        if hasattr(self.today, "apply_health_report"):
+            self.today.apply_health_report(report)
+        if report.critical_ok:
+            self.today.refresh()
+        else:
+            self.today.show_health_failure(
+                report,
+                on_open_settings=lambda: self.set_page(2),
+                on_retry=lambda: self.health_retry_callback() if self.health_retry_callback else None,
+            )
+
+    def apply_health_error(self, msg: str) -> None:
+        from mlb_hr.services.health import HealthItem, HealthReport
+        report = HealthReport(
+            items=(HealthItem(key="health_check", label="Health check", state="ERROR", detail=msg),),
+            critical_ok=False,
+        )
+        self.apply_health_report(report)
