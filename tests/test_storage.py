@@ -1,5 +1,6 @@
 from datetime import datetime,timezone
 from pathlib import Path
+from uuid import uuid4
 from mlb_hr.domain.enums import *
 from mlb_hr.domain.models import *
 from mlb_hr.storage.sqlite import SQLiteStore
@@ -7,6 +8,11 @@ from mlb_hr.storage.sqlite import SQLiteStore
 
 def make_prediction(pid,snapshot,prob=.2):
     return Prediction(pid,snapshot,1,PlayerRef(10,'Batter'),PlayerRef(20,'Pitcher'),'A','B',datetime.now(timezone.utc),prob,prob,80,'A',80,80,ConfidenceLabel.HIGH,ProbabilityDistribution(prob,prob-.02,prob,prob+.02,.04,90),ModelClassification.PRIMARY,UserActionLabel.RECOMMENDED,IntegrityStatus.PASS,CriticVerdict.PASS,['Strong'],None,[],'V1','F1','C1','Q1',ModelHealth.GREEN,datetime.now(timezone.utc))
+
+
+def make_combo(filter_status=CombinationFilterStatus.QUALIFIED):
+    leg=CombinationLeg('pred-1',10,'Batter',.2,ModelClassification.PRIMARY,1)
+    return Combination(str(uuid4()),'BEST_2_MAN',[leg],.04,80.0,filter_status,None,None,[])
 
 
 def test_prediction_revisions_latest_only(tmp_path:Path):
@@ -38,3 +44,13 @@ def test_confirmed_scratch_invalidates_old_latest(tmp_path:Path):
     changes=st.invalidate_stale_predictions(1,{999:20})
     assert changes and changes[0]['reason']=='POST_LOCK_LINEUP_INVALIDATION'
     assert st.pending_predictions()==[]
+
+
+def test_combination_filter_status_persists(tmp_path:Path):
+    root=Path(__file__).resolve().parents[1]
+    st=SQLiteStore(tmp_path/'db.sqlite',root/'migrations');st.migrate()
+    combo=make_combo(filter_status=CombinationFilterStatus.FALLBACK)
+    st.save_combination(combo)
+    with st.connection() as con:
+        row=con.execute("SELECT filter_status FROM combinations WHERE combination_id=?",(combo.combination_id,)).fetchone()
+    assert row['filter_status']=='FALLBACK'

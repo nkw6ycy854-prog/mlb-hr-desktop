@@ -11,7 +11,7 @@ from typing import Any, Iterator
 from mlb_hr.domain.models import Combination, OddsQuote, Prediction, ResultRecord
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def utcnow_iso() -> str:
@@ -344,11 +344,12 @@ class SQLiteStore:
             con.execute(
                 """INSERT OR IGNORE INTO combinations(
                        combination_id,kind,created_at,legs_json,model_probability_proxy,robustness,
-                       actual_parlay_odds,estimated_decimal_odds,warnings_json
-                   ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                       actual_parlay_odds,estimated_decimal_odds,warnings_json,filter_status
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (combo.combination_id,combo.kind,utcnow_iso(),json.dumps(legs,default=str),
                  combo.model_probability_proxy,combo.robustness,combo.actual_parlay_american_odds,
-                 combo.estimated_decimal_odds,json.dumps(combo.warnings,ensure_ascii=False)),
+                 combo.estimated_decimal_odds,json.dumps(combo.warnings,ensure_ascii=False),
+                 combo.filter_status.value),
             )
 
     def pending_combinations(self) -> list[sqlite3.Row]:
