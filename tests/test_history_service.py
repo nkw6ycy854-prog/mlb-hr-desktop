@@ -9,10 +9,11 @@ from mlb_hr.services.history import (
 
 
 class FakeStore:
-    def __init__(self, player_rows=None, combo_rows=None, prediction_rows=None):
+    def __init__(self, player_rows=None, combo_rows=None, prediction_rows=None, leg_settlement_rows=None):
         self._player_rows = player_rows or []
         self._combo_rows = combo_rows or []
         self._prediction_rows = prediction_rows or {}
+        self._leg_settlement_rows = leg_settlement_rows or {}
 
     def history_prediction_rows(self, limit=2000):
         return list(self._player_rows)
@@ -22,6 +23,9 @@ class FakeStore:
 
     def prediction_rows_by_ids(self, ids):
         return {pid: self._prediction_rows[pid] for pid in ids if pid in self._prediction_rows}
+
+    def leg_settlements(self, ids):
+        return {pid: self._leg_settlement_rows[pid] for pid in ids if pid in self._leg_settlement_rows}
 
 
 def _player_row(prediction_id, *, classification, game_time, created_at, final_probability=0.25,
@@ -112,6 +116,37 @@ def test_combination_records_uses_earliest_leg_game_time_as_start():
     assert record.result == "HR"
     assert {leg.player_name for leg in record.legs} == {"Aaron Judge", "Juan Soto"}
     assert all(leg.game_time is not None for leg in record.legs)
+
+
+def test_combination_legs_carry_their_own_individual_result():
+    now = datetime(2026, 8, 26, 20, 0, tzinfo=timezone.utc)
+    legs = [
+        {"prediction_id": "p1", "player_id": 1, "player_name": "Aaron Judge", "probability": .3, "classification": "PRIMARY", "game_pk": 1},
+        {"prediction_id": "p2", "player_id": 2, "player_name": "Juan Soto", "probability": .28, "classification": "SECONDARY", "game_pk": 2},
+        {"prediction_id": "p3", "player_id": 3, "player_name": "Player C", "probability": .1, "classification": "WATCH", "game_pk": 3},
+    ]
+    # Combo overall lost (won=0) even though one leg individually hit a HR.
+    combo_row = _combo_row("c1", filter_status="QUALIFIED", created_at=now.isoformat(), legs=legs, won=0, profit_loss=-10.0)
+    prediction_rows = {
+        "p1": {"game_time": now.isoformat()},
+        "p2": {"game_time": now.isoformat()},
+        "p3": {"game_time": now.isoformat()},
+    }
+    leg_settlement_rows = {
+        "p1": {"actual_hr_binary": 1},
+        "p2": {"actual_hr_binary": 0},
+        "p3": {"actual_hr_binary": None},
+    }
+    store = FakeStore(combo_rows=[combo_row], prediction_rows=prediction_rows, leg_settlement_rows=leg_settlement_rows)
+    service = HistoryService(store)
+
+    records = service.combination_records(HistoryFilter(), now)
+
+    legs_by_name = {leg.player_name: leg for leg in records[0].legs}
+    assert legs_by_name["Aaron Judge"].result == "HR"
+    assert legs_by_name["Juan Soto"].result == "NO_HR"
+    assert legs_by_name["Player C"].result == "PENDING"
+    assert records[0].result == "NO_HR"  # combo-level result is independent of leg-level results
 
 
 def test_fallback_combination_with_no_settlement_is_pending_and_no_filter():

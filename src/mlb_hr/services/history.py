@@ -33,6 +33,7 @@ class CombinationLegRecord:
     classification: str
     game_pk: int
     game_time: datetime | None
+    result: str
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,7 @@ class HistoryService:
         parsed_legs_by_combo = {row["combination_id"]: json.loads(row["legs_json"]) for row in rows}
         all_leg_ids = {leg["prediction_id"] for legs in parsed_legs_by_combo.values() for leg in legs}
         prediction_rows = self.store.prediction_rows_by_ids(list(all_leg_ids))
+        leg_settlement_rows = self.store.leg_settlements(list(all_leg_ids))
 
         records: list[CombinationHistoryRecord] = []
         for row in rows:
@@ -133,11 +135,15 @@ class HistoryService:
                 game_time = _parse_dt(pred_row["game_time"]) if pred_row else None
                 if game_time is not None:
                     game_times.append(game_time)
+                settlement_row = leg_settlement_rows.get(leg["prediction_id"])
+                leg_hr_binary = settlement_row["actual_hr_binary"] if settlement_row else None
+                leg_result = "PENDING" if leg_hr_binary is None else ("HR" if int(leg_hr_binary) == 1 else "NO_HR")
                 leg_records.append(CombinationLegRecord(
                     player_name=leg["player_name"],
                     classification=leg["classification"],
                     game_pk=leg["game_pk"],
                     game_time=game_time,
+                    result=leg_result,
                 ))
             filter_status = row["filter_status"]
             status = "RECOMMENDED" if filter_status == "QUALIFIED" else "NO_FILTER"

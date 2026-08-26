@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from mlb_hr.services.history import HistoryFilter, HistoryService
-from mlb_hr.ui.presentation import format_local_time
+from mlb_hr.ui.presentation import combination_result_label, format_local_time, player_result_label
 
 
 def _default_timezone_name() -> str:
@@ -29,6 +29,10 @@ COMBINATION_TABLE_HEADERS = ["Fecha", "Inicio", "Tipo", "Selecciones", "Filtro",
 _PERIOD_BUTTONS = [("TODAY", "HOY"), ("7D", "7 DÍAS"), ("30D", "30 DÍAS"), ("ALL", "TODO")]
 _STATUS_OPTIONS = [("ALL", "Todos"), ("RECOMMENDED", "Recomendado"), ("WATCH", "Vigilar"), ("NO_FILTER", "No cumple filtro")]
 _RESULT_OPTIONS = [("ALL", "Todos"), ("HR", "HR"), ("NO_HR", "No HR"), ("PENDING", "Pendiente")]
+_RESULT_LABELS_BY_MODE = {
+    0: ["Todos", "HR", "No HR", "Pendiente"],
+    1: ["Todos", "Ganada", "Perdida", "Pendiente"],
+}
 
 
 class HistoryWidget(QWidget):
@@ -141,8 +145,13 @@ class HistoryWidget(QWidget):
 
     def set_mode(self, index: int) -> None:
         self.mode_stack.setCurrentIndex(index)
+        self._apply_result_labels(index)
         self._clear_detail()
         self.refresh()
+
+    def _apply_result_labels(self, mode_index: int) -> None:
+        for i, label in enumerate(_RESULT_LABELS_BY_MODE[mode_index]):
+            self.result_combo.setItemText(i, label)
 
     def _set_period(self, code: str) -> None:
         self._period = code
@@ -218,7 +227,7 @@ class HistoryWidget(QWidget):
             date_text = rec.created_at.date().isoformat() if rec.created_at else "—"
             time_text = format_local_time(rec.game_time, self.timezone_name)
             odds_text = f"{int(rec.odds_at_prediction):+d}" if rec.odds_at_prediction is not None else "—"
-            vals = [date_text, time_text, rec.player_name, f"{rec.final_probability*100:.1f}%", rec.status, odds_text, rec.result]
+            vals = [date_text, time_text, rec.player_name, f"{rec.final_probability*100:.1f}%", rec.status, odds_text, player_result_label(rec.result)]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(str(v))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c not in {2} else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -235,7 +244,7 @@ class HistoryWidget(QWidget):
             selections = " + ".join(leg.player_name for leg in rec.legs)
             odds_text = f"{rec.estimated_decimal_odds:.2f}" if rec.estimated_decimal_odds else "—"
             pl_text = f"${rec.pnl:+.2f}" if rec.pnl is not None else "—"
-            vals = [date_text, start_text, rec.kind, selections, rec.filter_status, odds_text, rec.result, pl_text]
+            vals = [date_text, start_text, rec.kind, selections, rec.filter_status, odds_text, combination_result_label(rec.result), pl_text]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(str(v))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c not in {3} else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -263,7 +272,7 @@ class HistoryWidget(QWidget):
         odds_text = f"{int(record.odds_at_prediction):+d}" if record.odds_at_prediction is not None else "SIN CUOTA"
         odds = QLabel(f"Cuota registrada: {odds_text}")
         self.detail_layout.insertWidget(3, odds)
-        result = QLabel(f"Resultado: {record.result}")
+        result = QLabel(f"Resultado: {player_result_label(record.result)}")
         self.detail_layout.insertWidget(4, result)
 
     def _show_combination_detail(self, record) -> None:
@@ -274,10 +283,10 @@ class HistoryWidget(QWidget):
         idx = 1
         for leg in record.legs:
             time_text = format_local_time(leg.game_time, self.timezone_name)
-            lab = QLabel(f"{leg.player_name} · {leg.classification} · {time_text}")
+            lab = QLabel(f"{leg.player_name} · {leg.classification} · {player_result_label(leg.result)} · {time_text}")
             self.detail_layout.insertWidget(idx, lab)
             idx += 1
-        result = QLabel(f"Resultado: {record.result}")
+        result = QLabel(f"Resultado: {combination_result_label(record.result)}")
         self.detail_layout.insertWidget(idx, result)
         idx += 1
         pl_text = f"${record.pnl:+.2f}" if record.pnl is not None else "—"

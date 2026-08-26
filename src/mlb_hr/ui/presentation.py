@@ -57,3 +57,15 @@ def format_local_time(dt: datetime | None, timezone_name: str) -> str:
         return "—"
     text = dt.astimezone(ZoneInfo(timezone_name)).strftime("%I:%M %p")
     return text.lstrip("0") or text
+
+
+_PLAYER_RESULT_LABELS = {"HR": "HR", "NO_HR": "NO HR", "PENDING": "PENDIENTE"}
+_COMBINATION_RESULT_LABELS = {"HR": "GANADA", "NO_HR": "PERDIDA", "PENDING": "PENDIENTE"}
+
+
+def player_result_label(result: str) -> str:
+    return _PLAYER_RESULT_LABELS.get(result, result)
+
+
+def combination_result_label(result: str) -> str:
+    return _COMBINATION_RESULT_LABELS.get(result, result)

@@ -23,6 +23,9 @@ class _FakeStore:
     def prediction_rows_by_ids(self, ids):
         return {}
 
+    def leg_settlements(self, ids):
+        return {}
+
     def get_state(self, key, default=None):
         return default
 
@@ -83,9 +86,10 @@ def _tz_store():
     combo_row = {
         "combination_id": "c1", "kind": "BEST_2_MAN", "created_at": created_at,
         "legs_json": json.dumps(legs), "filter_status": "QUALIFIED",
-        "won": None, "profit_loss": None, "estimated_decimal_odds": 2.5,
+        "won": 1, "profit_loss": 25.0, "estimated_decimal_odds": 2.5,
     }
     prediction_rows = {"p1": {"game_time": game_time_p1}, "p2": {"game_time": game_time_p2}}
+    leg_settlement_rows = {"p1": {"actual_hr_binary": 1}, "p2": {"actual_hr_binary": None}}
 
     class _TzStore:
         def history_prediction_rows(self, limit=2000):
@@ -96,6 +100,9 @@ def _tz_store():
 
         def prediction_rows_by_ids(self, ids):
             return {k: v for k, v in prediction_rows.items() if k in ids}
+
+        def leg_settlements(self, ids):
+            return {k: v for k, v in leg_settlement_rows.items() if k in ids}
 
         def get_state(self, key, default=None):
             return "America/Santo_Domingo" if key == "timezone_name" else default
@@ -125,10 +132,25 @@ def test_selecting_player_row_shows_original_prediction_classification_odds_resu
     assert "30.0%" in texts
     assert "PRIMARY" in texts
     assert "+150" in texts
-    assert "PENDING" in texts
+    assert "PENDIENTE" in texts
 
 
-def test_selecting_combination_row_shows_each_leg_with_individual_time():
+def test_player_table_and_detail_use_hr_no_hr_pendiente_vocabulary():
+    app()
+    widget = HistoryWidget(_tz_store())
+    result_item = widget.players_table.item(0, 6)
+    assert result_item.text() == "PENDIENTE"
+
+
+def test_combination_table_result_column_uses_ganada_not_hr():
+    app()
+    widget = HistoryWidget(_tz_store())
+    result_item = widget.combinations_table.item(0, 6)
+    assert result_item.text() == "GANADA"
+    assert result_item.text() not in {"HR", "NO_HR", "NO HR"}
+
+
+def test_selecting_combination_row_shows_each_leg_with_individual_time_and_result():
     app()
     widget = HistoryWidget(_tz_store())
     widget.set_mode(1)
@@ -136,3 +158,26 @@ def test_selecting_combination_row_shows_each_leg_with_individual_time():
     texts = "\n".join(label.text() for label in widget.detail.findChildren(QLabel))
     assert "Aaron Judge" in texts and "7:05 PM" in texts
     assert "Juan Soto" in texts and "6:40 PM" in texts
+    # Combo-level result is GANADA, but each leg keeps its own HR/NO HR/PENDIENTE outcome.
+    assert "Aaron Judge · PRIMARY · HR · 7:05 PM" in texts
+    assert "Juan Soto · SECONDARY · PENDIENTE · 6:40 PM" in texts
+    assert "GANADA" in texts
+    assert "Resultado: GANADA" in texts
+
+
+def test_result_filter_labels_switch_to_ganada_perdida_pendiente_in_combinations_mode():
+    app()
+    widget = HistoryWidget(_tz_store())
+    widget.set_mode(1)
+    labels = [widget.result_combo.itemText(i) for i in range(widget.result_combo.count())]
+    assert labels == ["Todos", "Ganada", "Perdida", "Pendiente"]
+    # Underlying filter codes stay the same regardless of the visible label.
+    widget.result_combo.setCurrentIndex(widget.result_combo.findData("HR"))
+    assert widget.current_filter().result == "HR"
+
+
+def test_result_filter_labels_stay_hr_no_hr_pendiente_in_players_mode():
+    app()
+    widget = HistoryWidget(_tz_store())
+    labels = [widget.result_combo.itemText(i) for i in range(widget.result_combo.count())]
+    assert labels == ["Todos", "HR", "No HR", "Pendiente"]

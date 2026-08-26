@@ -2,7 +2,14 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from mlb_hr.domain.enums import ModelClassification
-from mlb_hr.ui.presentation import format_local_time, practical_status, quote_display, visible_cards
+from mlb_hr.ui.presentation import (
+    combination_result_label,
+    format_local_time,
+    player_result_label,
+    practical_status,
+    quote_display,
+    visible_cards,
+)
 
 
 def test_practical_status_mapping():
@@ -52,3 +59,15 @@ def test_format_local_time_converts_to_configured_timezone():
 
 def test_format_local_time_handles_missing_datetime():
     assert format_local_time(None, "UTC") == "—"
+
+
+def test_player_result_label_uses_hr_no_hr_pendiente():
+    assert player_result_label("HR") == "HR"
+    assert player_result_label("NO_HR") == "NO HR"
+    assert player_result_label("PENDING") == "PENDIENTE"
+
+
+def test_combination_result_label_uses_ganada_perdida_pendiente():
+    assert combination_result_label("HR") == "GANADA"
+    assert combination_result_label("NO_HR") == "PERDIDA"
+    assert combination_result_label("PENDING") == "PENDIENTE"
