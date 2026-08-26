@@ -72,6 +72,25 @@ class OddsProvider:
             result.raw_reference,
         )
 
+    def test_connection(self) -> ProviderResult[bool]:
+        fetched = now_utc()
+        if not self.api_key:
+            return ProviderResult(
+                False,
+                self._meta(fetched, complete=False, warnings=["No Odds API key configured"]),
+                error_code="ODDS_UNAVAILABLE",
+                error_message="No Odds API key configured",
+            )
+        try:
+            r = self.http.get(
+                f"{CONFIG.odds_base_url}/sports/baseball_mlb/events",
+                params={"apiKey": self.api_key, "dateFormat": "iso"},
+            )
+            ok = isinstance(r.json(), list)
+            return ProviderResult(ok, self._meta(fetched), raw_reference=r.url)
+        except Exception as exc:
+            return ProviderResult(False, self._meta(fetched, complete=False, warnings=[str(exc)]), "ODDS_UNAVAILABLE", str(exc))
+
     def _meta(self, fetched: datetime, complete: bool = True, warnings: list[str] | None = None) -> ProviderMeta:
         return ProviderMeta(
             provider="The Odds API",

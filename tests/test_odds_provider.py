@@ -121,3 +121,37 @@ def test_fetch_fanduel_hr_quotes_filters_from_all_us_books():
     result = provider.fetch_fanduel_hr_quotes(game)
 
     assert {(q.bookmaker, q.american_odds) for q in result.data} == {("FanDuel", 390)}
+
+
+class _RaisingHttpClient:
+    def get(self, url, *, params=None, headers=None, max_bytes=None):
+        raise RuntimeError("network unreachable")
+
+
+def test_test_connection_returns_true_on_valid_events_list():
+    http = FakeHttpClient(_events_payload(), _payload())
+    provider = OddsProvider(api_key="key123", http=http)
+
+    result = provider.test_connection()
+
+    assert result.data is True
+    assert result.error_code is None
+
+
+def test_test_connection_returns_structured_failure_on_exception():
+    provider = OddsProvider(api_key="key123", http=_RaisingHttpClient())
+
+    result = provider.test_connection()
+
+    assert result.data is False
+    assert result.error_code == "ODDS_UNAVAILABLE"
+    assert "network unreachable" in result.error_message
+
+
+def test_test_connection_without_api_key_is_not_configured():
+    provider = OddsProvider(api_key=None, http=FakeHttpClient(_events_payload(), _payload()))
+
+    result = provider.test_connection()
+
+    assert result.data is False
+    assert result.error_code == "ODDS_UNAVAILABLE"

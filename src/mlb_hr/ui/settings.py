@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from zoneinfo import available_timezones
 
+from PySide6.QtCore import QThreadPool, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QFrame, QLabel, QLineEdit,
     QPushButton, QVBoxLayout, QWidget,
 )
 
+from mlb_hr.ai.providers import GeminiProvider, OllamaProvider, OpenAICompatibleProvider
+from mlb_hr.providers.odds import OddsProvider
 from mlb_hr.providers.secrets import SecretStore
+from mlb_hr.selftest import run_self_test
+from mlb_hr.ui.workers import FunctionWorker
 
 STAKE_OPTIONS = ["$5", "$10", "$20", "$25", "$50"]
 DENSITY_OPTIONS = [("Cómoda", "comfortable"), ("Compacta", "compact")]
@@ -15,6 +22,18 @@ AI_PROVIDER_OPTIONS = [
     ("Ninguno", "none"), ("Groq", "groq"), ("Gemini", "gemini"),
     ("OpenRouter", "openrouter"), ("Ollama local", "ollama"),
 ]
+
+
+def _default_ai_provider_builder(provider_code: str, api_key: str, model: str):
+    if provider_code == "groq":
+        return OpenAICompatibleProvider(name="groq", endpoint="https://api.groq.com/openai/v1/chat/completions", api_key=api_key, model=model)
+    if provider_code == "gemini":
+        return GeminiProvider(api_key, model)
+    if provider_code == "openrouter":
+        return OpenAICompatibleProvider(name="openrouter", endpoint="https://openrouter.ai/api/v1/chat/completions", api_key=api_key, model=model)
+    if provider_code == "ollama":
+        return OllamaProvider(model)
+    raise ValueError("Proveedor de IA no reconocido")
 
 
 def _section(title: str, root: QVBoxLayout) -> QFormLayout:
@@ -31,11 +50,31 @@ def _section(title: str, root: QVBoxLayout) -> QFormLayout:
 
 
 class SettingsWidget(QWidget):
-    def __init__(self, store, parent=None) -> None:
+    def __init__(
+        self, store, parent=None, *,
+        paths=None,
+        odds_provider_factory=None,
+        ai_provider_builder=None,
+        self_test_runner=None,
+        open_url_func=None,
+    ) -> None:
         super().__init__(parent)
         self.store = store
         self.secrets = SecretStore()
+        self._paths_override = paths
+        self.odds_provider_factory = odds_provider_factory or (lambda api_key: OddsProvider(api_key))
+        self.ai_provider_builder = ai_provider_builder or _default_ai_provider_builder
+        self.self_test_runner = self_test_runner or run_self_test
+        self.open_url_func = open_url_func or (lambda url: QDesktopServices.openUrl(url))
+        self.thread_pool = QThreadPool.globalInstance()
         self._build()
+
+    @property
+    def paths(self):
+        if self._paths_override is None:
+            from mlb_hr.storage.paths import resolve_app_paths
+            self._paths_override = resolve_app_paths()
+        return self._paths_override
 
     def _build(self) -> None:
         root = QVBoxLayout(self)
@@ -109,6 +148,7 @@ class SettingsWidget(QWidget):
         us_books.setObjectName("muted")
         form.addRow("Sportsbooks", us_books)
         self.test_connection_btn = QPushButton("PROBAR CONEXIÓN")
+        self.test_connection_btn.clicked.connect(self._test_connection)
         form.addRow(self.test_connection_btn)
         self.odds_feedback = QLabel("")
         self.odds_feedback.setObjectName("muted")
@@ -152,6 +192,7 @@ class SettingsWidget(QWidget):
         form.addRow("Modelo Ollama local", self.ollama_model)
 
         self.test_ai_btn = QPushButton("PROBAR IA")
+        self.test_ai_btn.clicked.connect(self._test_ai)
         form.addRow(self.test_ai_btn)
         self.ai_feedback = QLabel("")
         self.ai_feedback.setObjectName("muted")
@@ -169,8 +210,10 @@ class SettingsWidget(QWidget):
         self.last_selftest = QLabel(str(self.store.get_state("last_selftest_at", "Nunca ejecutado")))
         form.addRow("Último self-test", self.last_selftest)
         self.open_data_folder_btn = QPushButton("ABRIR CARPETA DE DATOS")
+        self.open_data_folder_btn.clicked.connect(self._open_data_folder)
         form.addRow(self.open_data_folder_btn)
         self.run_selftest_btn = QPushButton("EJECUTAR SELF-TEST")
+        self.run_selftest_btn.clicked.connect(self._run_self_test)
         form.addRow(self.run_selftest_btn)
         self.selftest_feedback = QLabel("")
         self.selftest_feedback.setObjectName("muted")
@@ -249,3 +292,107 @@ class SettingsWidget(QWidget):
                 parts.append("Reinicia la app para recargar los providers configurados.")
             self.feedback.setText(" ".join(parts))
             self.feedback.setObjectName("good")
+
+    def _test_connection(self) -> None:
+        self.test_connection_btn.setEnabled(False)
+        self.odds_feedback.setText("Probando conexión…")
+        self.odds_feedback.setObjectName("muted")
+        api_key = self.odds_key.text().strip() or self.secrets.get("THE_ODDS_API_KEY")
+        provider = self.odds_provider_factory(api_key)
+        worker = FunctionWorker(provider.test_connection)
+        self._connection_worker = worker
+        worker.signals.finished.connect(self._connection_tested)
+        worker.signals.error.connect(self._connection_test_error)
+        self.thread_pool.start(worker)
+
+    def _connection_tested(self, result) -> None:
+        self.test_connection_btn.setEnabled(True)
+        if result.data:
+            self.odds_feedback.setText("Conexión OK")
+            self.odds_feedback.setObjectName("good")
+        else:
+            self.odds_feedback.setText(f"Error: {result.error_message or 'sin detalle'}")
+            self.odds_feedback.setObjectName("warning")
+
+    def _connection_test_error(self, msg: str) -> None:
+        self.test_connection_btn.setEnabled(True)
+        self.odds_feedback.setText(f"Error: {msg}")
+        self.odds_feedback.setObjectName("warning")
+
+    def _test_ai(self) -> None:
+        provider_label = self.ai_provider.currentText()
+        provider_code = next((code for label, code in AI_PROVIDER_OPTIONS if label == provider_label), "none")
+        key_model_fields = {
+            "groq": (self.groq_key, self.groq_model),
+            "gemini": (self.gemini_key, self.gemini_model),
+            "openrouter": (self.openrouter_key, self.openrouter_model),
+            "ollama": (None, self.ollama_model),
+        }
+        if provider_code not in key_model_fields:
+            self.ai_feedback.setText("Selecciona un proveedor de IA para probar.")
+            self.ai_feedback.setObjectName("warning")
+            return
+        key_field, model_field = key_model_fields[provider_code]
+        api_key = (key_field.text().strip() if key_field else "") or self.secrets.get(f"{provider_code.upper()}_API_KEY") or ""
+        model = model_field.text().strip()
+
+        self.test_ai_btn.setEnabled(False)
+        self.ai_feedback.setText("Probando IA…")
+        self.ai_feedback.setObjectName("muted")
+        try:
+            provider = self.ai_provider_builder(provider_code, api_key, model)
+        except Exception as exc:
+            self.test_ai_btn.setEnabled(True)
+            self.ai_feedback.setText(f"Error: {exc}")
+            self.ai_feedback.setObjectName("warning")
+            return
+        worker = FunctionWorker(provider.review, "SELFTEST", {"probe": True})
+        self._ai_worker = worker
+        worker.signals.finished.connect(self._ai_tested)
+        worker.signals.error.connect(self._ai_test_error)
+        self.thread_pool.start(worker)
+
+    def _ai_tested(self, review) -> None:
+        self.test_ai_btn.setEnabled(True)
+        if review.available:
+            self.ai_feedback.setText(f"{review.provider} ({review.model}) respondió correctamente.")
+            self.ai_feedback.setObjectName("good")
+        else:
+            self.ai_feedback.setText(f"{review.provider}: {review.error or 'sin respuesta'}")
+            self.ai_feedback.setObjectName("warning")
+
+    def _ai_test_error(self, msg: str) -> None:
+        self.test_ai_btn.setEnabled(True)
+        self.ai_feedback.setText(f"Error: {msg}")
+        self.ai_feedback.setObjectName("warning")
+
+    def _open_data_folder(self) -> None:
+        self.open_url_func(QUrl.fromLocalFile(str(self.paths.data_dir)))
+
+    def _run_self_test(self) -> None:
+        self.run_selftest_btn.setEnabled(False)
+        self.selftest_feedback.setText("Ejecutando self-test…")
+        self.selftest_feedback.setObjectName("muted")
+        worker = FunctionWorker(self.self_test_runner, require_runtime_data=True)
+        self._selftest_worker = worker
+        worker.signals.finished.connect(self._self_test_done)
+        worker.signals.error.connect(self._self_test_error)
+        self.thread_pool.start(worker)
+
+    def _self_test_done(self, result: dict) -> None:
+        self.run_selftest_btn.setEnabled(True)
+        now_text = datetime.now(timezone.utc).isoformat()
+        self.store.set_state("last_selftest_at", now_text)
+        self.last_selftest.setText(now_text)
+        if result.get("passed"):
+            self.selftest_feedback.setText("PASS")
+            self.selftest_feedback.setObjectName("good")
+        else:
+            failed = [k for k, v in result.get("checks", {}).items() if not v]
+            self.selftest_feedback.setText("FAIL: " + ", ".join(failed))
+            self.selftest_feedback.setObjectName("warning")
+
+    def _self_test_error(self, msg: str) -> None:
+        self.run_selftest_btn.setEnabled(True)
+        self.selftest_feedback.setText(f"Error: {msg}")
+        self.selftest_feedback.setObjectName("warning")

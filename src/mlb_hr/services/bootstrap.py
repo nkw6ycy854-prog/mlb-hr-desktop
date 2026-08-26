@@ -62,7 +62,8 @@ def build_services(*,demo:bool=False)->tuple[AnalysisService,AppPaths,SQLiteStor
         ai_providers.append(OpenAICompatibleProvider(name="openrouter",endpoint="https://openrouter.ai/api/v1/chat/completions",api_key=openrouter_key,model=openrouter_model))
     ollama_model=str(store.get_state("ollama_model","") or "").strip()
     if ollama_model:ai_providers.append(OllamaProvider(ollama_model))
-    ai=AutoFreeAI(ai_providers) if ai_providers else None
+    ai_review_enabled=bool(store.get_state("ai_review_enabled",False))
+    ai=AutoFreeAI(ai_providers) if (ai_providers and ai_review_enabled) else None
     stake=float(store.get_state("default_stake",10.0))
     service=AnalysisService(store=store,analytics=analytics,model_package=package,odds=odds,ai=ai,stake=stake,allow_unvalidated_demo=demo)
     return service,paths,store
