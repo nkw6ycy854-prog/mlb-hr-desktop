@@ -21,7 +21,7 @@ class OddsProvider:
         self._events_cache: tuple[datetime, list[dict[str, Any]]] | None = None
         self._quote_cache: dict[int, tuple[datetime, list[OddsQuote]]] = {}
 
-    def fetch_fanduel_hr_quotes(self, game: GameContext) -> ProviderResult[list[OddsQuote]]:
+    def fetch_us_hr_quotes(self, game: GameContext) -> ProviderResult[list[OddsQuote]]:
         fetched = now_utc()
         if not self.api_key:
             return ProviderResult(
@@ -51,7 +51,6 @@ class OddsProvider:
                 params={
                     "apiKey": self.api_key,
                     "regions": "us",
-                    "bookmakers": "fanduel",
                     "markets": "batter_home_runs",
                     "oddsFormat": "american",
                     "dateFormat": "iso",
@@ -62,6 +61,16 @@ class OddsProvider:
             return ProviderResult(quotes, self._meta(fetched), raw_reference=r.url)
         except Exception as exc:
             return ProviderResult([], self._meta(fetched, complete=False, warnings=[str(exc)]), "ODDS_UNAVAILABLE", str(exc))
+
+    def fetch_fanduel_hr_quotes(self, game: GameContext) -> ProviderResult[list[OddsQuote]]:
+        result = self.fetch_us_hr_quotes(game)
+        return ProviderResult(
+            [q for q in (result.data or []) if q.bookmaker.lower() == "fanduel"],
+            result.meta,
+            result.error_code,
+            result.error_message,
+            result.raw_reference,
+        )
 
     def _meta(self, fetched: datetime, complete: bool = True, warnings: list[str] | None = None) -> ProviderMeta:
         return ProviderMeta(
