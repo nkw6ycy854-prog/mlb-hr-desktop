@@ -130,8 +130,15 @@ def test_data_status_shows_error_when_health_report_statcast_fails():
 # --- MainWindow wiring ---
 
 class DummyPage(QWidget):
+    def __init__(self, *_):
+        super().__init__()
+        self.health_report = None
+
     def refresh(self):
         self.refreshed = True
+
+    def apply_health_report(self, report):
+        self.health_report = report
 
 
 class DummyToday(QWidget):
@@ -201,3 +208,16 @@ def test_apply_health_error_shows_failure_banner(monkeypatch):
     assert w.today.refreshed is False
     assert w.today.failure_report is not None
     assert w.today.failure_report.critical_ok is False
+
+
+def test_apply_health_report_refreshes_settings_sistema_section_too(monkeypatch):
+    w = _main_window(monkeypatch)
+
+    report = _report(False)
+    w.apply_health_report(report)
+    assert w.settings.health_report is report
+
+    # A retry that later comes back healthy must refresh SISTEMA again with the new report.
+    ok_report = _report(True)
+    w.apply_health_report(ok_report)
+    assert w.settings.health_report is ok_report

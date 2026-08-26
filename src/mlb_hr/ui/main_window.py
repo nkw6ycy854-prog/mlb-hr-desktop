@@ -89,6 +89,8 @@ class MainWindow(QMainWindow):
     def apply_health_report(self, report) -> None:
         if hasattr(self.today, "apply_health_report"):
             self.today.apply_health_report(report)
+        if hasattr(self.settings, "apply_health_report"):
+            self.settings.apply_health_report(report)
         if report.critical_ok:
             self.today.refresh()
         else:

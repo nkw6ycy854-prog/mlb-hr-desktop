@@ -201,13 +201,13 @@ class SettingsWidget(QWidget):
 
     def _build_system(self, root: QVBoxLayout) -> None:
         form = _section("SISTEMA", root)
-        self.statcast_status = QLabel("—")
+        self.statcast_status = QLabel("● —")
         form.addRow("Statcast", self.statcast_status)
-        self.model_status = QLabel("—")
+        self.model_status = QLabel("● —")
         form.addRow("Modelo", self.model_status)
-        self.db_status = QLabel("—")
+        self.db_status = QLabel("● —")
         form.addRow("Base de datos", self.db_status)
-        self.last_selftest = QLabel(str(self.store.get_state("last_selftest_at", "Nunca ejecutado")))
+        self.last_selftest = QLabel(self._initial_selftest_text())
         form.addRow("Último self-test", self.last_selftest)
         self.open_data_folder_btn = QPushButton("ABRIR CARPETA DE DATOS")
         self.open_data_folder_btn.clicked.connect(self._open_data_folder)
@@ -381,10 +381,13 @@ class SettingsWidget(QWidget):
 
     def _self_test_done(self, result: dict) -> None:
         self.run_selftest_btn.setEnabled(True)
-        now_text = datetime.now(timezone.utc).isoformat()
-        self.store.set_state("last_selftest_at", now_text)
-        self.last_selftest.setText(now_text)
-        if result.get("passed"):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        passed = bool(result.get("passed"))
+        self.store.set_state("last_selftest_at", now_iso)
+        self.store.set_state("last_selftest_passed", passed)
+        self.last_selftest.setText(self._selftest_label(passed, now_iso))
+        self.last_selftest.setObjectName("good" if passed else "warning")
+        if passed:
             self.selftest_feedback.setText("PASS")
             self.selftest_feedback.setObjectName("good")
         else:
@@ -396,3 +399,34 @@ class SettingsWidget(QWidget):
         self.run_selftest_btn.setEnabled(True)
         self.selftest_feedback.setText(f"Error: {msg}")
         self.selftest_feedback.setObjectName("warning")
+
+    def _initial_selftest_text(self) -> str:
+        last_at = self.store.get_state("last_selftest_at", None)
+        last_passed = self.store.get_state("last_selftest_passed", None)
+        if last_at and last_passed is not None:
+            return self._selftest_label(bool(last_passed), str(last_at))
+        return "● NO EJECUTADO"
+
+    @staticmethod
+    def _selftest_label(passed: bool, iso_text: str) -> str:
+        try:
+            dt = datetime.fromisoformat(iso_text)
+        except ValueError:
+            time_text = iso_text
+        else:
+            time_text = dt.astimezone().strftime("%I:%M %p").lstrip("0")
+        return f"● {'PASS' if passed else 'FAIL'} · {time_text}"
+
+    def apply_health_report(self, report) -> None:
+        model_item = next((i for i in report.items if i.key == "model"), None)
+        if model_item:
+            self.model_status.setText(f"● {model_item.detail} · {model_item.state}")
+            self.model_status.setObjectName("good" if model_item.state == "OK" else "warning")
+        statcast_item = next((i for i in report.items if i.key == "statcast"), None)
+        if statcast_item:
+            self.statcast_status.setText(f"● {statcast_item.state} · {statcast_item.detail}")
+            self.statcast_status.setObjectName("good" if statcast_item.state == "OK" else "warning")
+        db_item = next((i for i in report.items if i.key == "database"), None)
+        if db_item:
+            self.db_status.setText(f"● {db_item.state}")
+            self.db_status.setObjectName("good" if db_item.state == "OK" else "warning")

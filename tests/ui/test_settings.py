@@ -172,3 +172,70 @@ def test_ejecutar_selftest_shows_fail_with_failed_check_names():
 
     assert "FAIL" in widget.selftest_feedback.text()
     assert "b" in widget.selftest_feedback.text()
+
+
+def _health_item(key, label, state, detail):
+    from mlb_hr.services.health import HealthItem
+    return HealthItem(key=key, label=label, state=state, detail=detail)
+
+
+def _health_report(*, model_ok=True, statcast_ok=True, db_ok=True):
+    from mlb_hr.services.health import HealthReport
+    items = (
+        _health_item("model", "Modelo", "OK" if model_ok else "ERROR",
+                     "V1.0.0" if model_ok else "V0.9.0 (esperado V1.0.0, release_ready=False)"),
+        _health_item("statcast", "Statcast", "OK" if statcast_ok else "ERROR",
+                     "Datos disponibles (3 archivo(s))." if statcast_ok else "Statcast no fue encontrado."),
+        _health_item("database", "Base de datos", "OK" if db_ok else "ERROR",
+                     "Conexión OK." if db_ok else "No se pudo conectar a la base de datos local."),
+        _health_item("odds", "Cuotas", "NOT_CONFIGURED", "SIN API / NO CONFIGURADO."),
+    )
+    return HealthReport(items=items, critical_ok=model_ok and statcast_ok and db_ok)
+
+
+def test_sistema_shows_not_run_before_any_selftest():
+    widget = _widget()
+    assert "NO EJECUTADO" in widget.last_selftest.text()
+
+
+def test_apply_health_report_updates_sistema_labels_with_ok_states():
+    widget = _widget()
+
+    widget.apply_health_report(_health_report(model_ok=True, statcast_ok=True, db_ok=True))
+
+    assert "V1.0.0" in widget.model_status.text()
+    assert "OK" in widget.model_status.text()
+    assert "OK" in widget.statcast_status.text()
+    assert widget.db_status.text() == "● OK"
+
+
+def test_apply_health_report_updates_sistema_labels_with_error_states():
+    widget = _widget()
+
+    widget.apply_health_report(_health_report(model_ok=False, statcast_ok=False, db_ok=False))
+
+    assert "ERROR" in widget.model_status.text()
+    assert "V0.9.0" in widget.model_status.text()
+    assert "ERROR" in widget.statcast_status.text()
+    assert widget.db_status.text() == "● ERROR"
+
+
+def test_ejecutar_selftest_updates_sistema_last_selftest_label_immediately():
+    widget = _widget()
+    widget.self_test_runner = lambda **kwargs: {"passed": True, "checks": {"a": True}, "details": {}}
+
+    widget.run_selftest_btn.click()
+    _pump()
+
+    assert "PASS" in widget.last_selftest.text()
+    assert "NO EJECUTADO" not in widget.last_selftest.text()
+
+
+def test_ejecutar_selftest_fail_updates_sistema_last_selftest_label():
+    widget = _widget()
+    widget.self_test_runner = lambda **kwargs: {"passed": False, "checks": {"a": False}, "details": {}}
+
+    widget.run_selftest_btn.click()
+    _pump()
+
+    assert "FAIL" in widget.last_selftest.text()

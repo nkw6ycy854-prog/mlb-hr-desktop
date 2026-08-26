@@ -46,13 +46,20 @@ class HealthService:
 
     def _model_item(self) -> HealthItem:
         package = self.service.package
-        model_ok = bool(package.release_ready) and package.manifest.model_version == MODEL_VERSION
-        detail = f"{package.manifest.model_version} validado." if model_ok else "Modelo no validado o versión inesperada."
+        version = package.manifest.model_version
+        model_ok = bool(package.release_ready) and version == MODEL_VERSION
+        detail = version if model_ok else f"{version} (esperado {MODEL_VERSION}, release_ready={bool(package.release_ready)})"
         return HealthItem(key="model", label="Modelo", state="OK" if model_ok else "ERROR", detail=detail)
 
     def _statcast_item(self) -> HealthItem:
         statcast_ok = self.service.analytics.has_data()
-        detail = "Datos disponibles." if statcast_ok else "Statcast no fue encontrado."
+        if not statcast_ok:
+            detail = "Statcast no fue encontrado."
+        elif self.paths is not None:
+            count = len(list(self.paths.parquet_dir.glob("season=*/month=*/statcast_*.parquet")))
+            detail = f"Datos disponibles ({count} archivo(s))."
+        else:
+            detail = "Datos disponibles."
         return HealthItem(key="statcast", label="Statcast", state="OK" if statcast_ok else "ERROR", detail=detail)
 
     def _database_item(self) -> HealthItem:

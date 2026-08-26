@@ -67,3 +67,36 @@ def test_unvalidated_model_is_error():
     model_item = next(i for i in report.items if i.key == "model")
     assert model_item.state == "ERROR"
     assert report.critical_ok is False
+
+
+def test_model_item_detail_always_reports_the_actual_loaded_version():
+    service = _service(model_version="V0.9.0", release_ready=True)
+    report = HealthService(service, paths=None, store=_StubStore()).run()
+
+    model_item = next(i for i in report.items if i.key == "model")
+    assert model_item.state == "ERROR"
+    assert "V0.9.0" in model_item.detail
+
+
+def test_statcast_ok_detail_includes_real_parquet_file_count(tmp_path):
+    season_dir = tmp_path / "season=2026" / "month=04"
+    season_dir.mkdir(parents=True)
+    (season_dir / "statcast_2026-04-01.parquet").write_text("x")
+    (season_dir / "statcast_2026-04-02.parquet").write_text("x")
+    paths = SimpleNamespace(parquet_dir=tmp_path)
+    service = _service(has_statcast=True)
+
+    report = HealthService(service, paths=paths, store=_StubStore()).run()
+
+    statcast_item = next(i for i in report.items if i.key == "statcast")
+    assert statcast_item.state == "OK"
+    assert "2" in statcast_item.detail
+
+
+def test_statcast_detail_never_fabricates_a_count_without_paths():
+    service = _service(has_statcast=True)
+    report = HealthService(service, paths=None, store=_StubStore()).run()
+
+    statcast_item = next(i for i in report.items if i.key == "statcast")
+    assert statcast_item.state == "OK"
+    assert not any(ch.isdigit() for ch in statcast_item.detail)
