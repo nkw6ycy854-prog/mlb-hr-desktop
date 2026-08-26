@@ -108,3 +108,23 @@ def test_copy_pick_shows_confirmation_and_resets():
     assert button.text() == "COPIADO ✓"
     assert "HR" in QApplication.clipboard().text()
 
+
+def test_today_layout_is_responsive():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    widget.resize(1200, 800)
+
+    widget.main_pair.resize(1000, 500)
+    widget.main_pair.reflow()
+    widget.combo_grid.resize(1000, 400)
+    widget.combo_grid.reflow()
+    assert widget.main_pair.column_count == 2
+    assert widget.combo_grid.column_count == 2
+
+    widget.main_pair.resize(650, 500)
+    widget.combo_grid.resize(650, 600)
+    widget.main_pair.reflow()
+    widget.combo_grid.reflow()
+    assert widget.main_pair.column_count == 1
+    assert widget.combo_grid.column_count == 1
+

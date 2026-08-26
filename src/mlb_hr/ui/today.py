@@ -5,12 +5,13 @@ from datetime import timezone
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView,QFrame,QGridLayout,QHBoxLayout,QLabel,QMessageBox,QPushButton,
-    QScrollArea,QSpinBox,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
+    QAbstractItemView,QFrame,QHBoxLayout,QLabel,QMessageBox,QPushButton,
+    QSizePolicy,QSpinBox,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
 from mlb_hr.domain.enums import ModelClassification, ModelHealth, SlateQuality
 from mlb_hr.domain.models import PredictionCard, SlateResult
+from mlb_hr.ui.components import ResponsiveGrid
 from mlb_hr.ui.presentation import display_quote, practical_status, visible_cards
 from mlb_hr.ui.workers import FunctionWorker
 
@@ -37,12 +38,12 @@ class TodayWidget(QWidget):
         self.expanded=False
         self.view_all_btn=QPushButton("VER TODOS");self.view_all_btn.clicked.connect(self.toggle_all);sec_row.addWidget(self.view_all_btn)
         root.addLayout(sec_row)
-        body=QHBoxLayout();root.addLayout(body,1)
         columns=["#","Jugador","HR%","Clasificación","Confianza","Mejor cuota","FanDuel","Estado"]
-        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);body.addWidget(self.table,3)
-        self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setMaximumWidth(400);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail();body.addWidget(self.detail,1)
+        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Expanding)
+        self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail()
+        self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);root.addWidget(self.main_pair,1)
         combo_label=QLabel("COMBINACIONES");combo_label.setObjectName("section");root.addWidget(combo_label)
-        self.combo_row=QHBoxLayout();root.addLayout(self.combo_row)
+        self.combo_grid=ResponsiveGrid(two_column_min_width=760);self._combo_frames:list[QFrame]=[];root.addWidget(self.combo_grid)
 
     def refresh(self)->None:
         self.refresh_btn.setEnabled(False);self.status.setText("Verificando lineups · SP · clima · modelo…")
@@ -133,10 +134,9 @@ class TodayWidget(QWidget):
         QTimer.singleShot(1500,lambda:self.copy_btn.setText("COPIAR PICK"))
 
     def _render_combos(self)->None:
-        while self.combo_row.count():
-            item=self.combo_row.takeAt(0);w=item.widget();
-            if w:w.deleteLater()
+        for frame in self._combo_frames:frame.deleteLater()
         combos={c.kind:c for c in (self.current.combinations if self.current else [])}
+        frames=[]
         for kind,label in [("BEST_2_MAN","BEST 2-MAN"),("BEST_3_MAN","BEST 3-MAN"),("LONG_SHOT_2_MAN","LONG-SHOT 2-MAN"),("LONG_SHOT_3_MAN","LONG-SHOT 3-MAN")]:
             frame=QFrame();frame.setObjectName("card");lay=QVBoxLayout(frame);title=QLabel(label);title.setStyleSheet("font-weight:700");lay.addWidget(title)
             combo=combos.get(kind)
@@ -146,4 +146,6 @@ class TodayWidget(QWidget):
                 if combo.estimated_decimal_odds:
                     total=self.service.stake*combo.estimated_decimal_odds;lay.addWidget(QLabel(f"Pago estimado · ${self.service.stake:.0f} → ${total:.2f}"))
                 else:lay.addWidget(QLabel("SIN CUOTA CONJUNTA"))
-            self.combo_row.addWidget(frame)
+            frames.append(frame)
+        self._combo_frames=frames
+        self.combo_grid.set_widgets(frames)
