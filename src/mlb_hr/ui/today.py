@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timezone
 
-from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,QFrame,QGridLayout,QHBoxLayout,QLabel,QMessageBox,QPushButton,
@@ -92,37 +92,45 @@ class TodayWidget(QWidget):
 
     def _show_detail(self,card:PredictionCard)->None:
         self._clear_detail();p=card.prediction;m=card.market
-        title=QLabel(p.player.full_name);title.setObjectName("section");self.detail_layout.insertWidget(0,title)
-        game=QLabel(f"{p.team_name} vs {p.opponent_name}"+(f" · {p.game_time.astimezone().strftime('%I:%M %p').lstrip('0')}" if p.game_time else ""));game.setObjectName("muted");self.detail_layout.insertWidget(1,game)
-        prob=QLabel(f"HR PROBABILITY\n{p.final_hr_probability*100:.1f}%");prob.setAlignment(Qt.AlignmentFlag.AlignCenter);prob.setStyleSheet("font-size:20px;font-weight:700;padding:10px;");self.detail_layout.insertWidget(2,prob)
-        conf=QLabel(f"{p.confidence_label.value} CONFIDENCE · {p.user_action.value}");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setObjectName("good" if p.user_action.value=="RECOMENDADO" else "warning");self.detail_layout.insertWidget(3,conf)
-        odds_text="SIN CUOTA"
+        title=QLabel(p.player.full_name);title.setObjectName("section");self.detail_layout.addWidget(title)
+        time_text=p.game_time.astimezone().strftime('%I:%M %p').lstrip('0') if p.game_time else "—"
+        game=QLabel(f"{p.team_name} vs {p.opponent_name} · {time_text}");game.setObjectName("muted");self.detail_layout.addWidget(game)
+        prob=QLabel(f"HR%\n{p.final_hr_probability*100:.1f}%");prob.setAlignment(Qt.AlignmentFlag.AlignCenter);prob.setStyleSheet("font-size:20px;font-weight:700;padding:10px;");self.detail_layout.addWidget(prob)
+        status=practical_status(p.classification)
+        conf=QLabel(f"{status} · {p.classification.value} · {p.confidence_label.value} CONFIANZA");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setObjectName("good" if status=="RECOMENDADO" else "warning");self.detail_layout.addWidget(conf)
+        best=QLabel(f"MEJOR CUOTA\n{display_quote(card,best=True)}");best.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(best)
+        fanduel=QLabel(f"FANDUEL\n{display_quote(card,best=False)}");fanduel.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(fanduel)
+        if p.reasons:
+            why=QLabel("¿POR QUÉ?");why.setStyleSheet("font-weight:700;margin-top:8px;");self.detail_layout.addWidget(why)
+            for reason in p.reasons[:4]:
+                lab=QLabel("✓ "+reason);lab.setWordWrap(True);self.detail_layout.addWidget(lab)
+        risk=QLabel("RIESGO PRINCIPAL\n"+("⚠ "+p.main_risk if p.main_risk else "✓ Sin advertencias importantes"));risk.setWordWrap(True);risk.setObjectName("warning" if p.main_risk else "good");self.detail_layout.addWidget(risk)
+
+        qualified=p.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}
+        missing_fanduel=m.quote is None
+        if qualified and missing_fanduel:
+            manual=QWidget();manual_layout=QHBoxLayout(manual);manual_layout.setContentsMargins(0,0,0,0)
+            spin=QSpinBox();spin.setRange(-10000,10000);spin.setValue(300);manual_layout.addWidget(spin)
+            apply_btn=QPushButton("Cuota manual");manual_layout.addWidget(apply_btn)
+            def apply():
+                val=spin.value()
+                if -100<val<100:QMessageBox.information(self,"Cuota","Usa cuota americana >= +100 o <= -100.");return
+                try:self.service.apply_manual_odds(card,val);self._render_table();self._show_detail(card)
+                except Exception as exc:QMessageBox.warning(self,"Cuota",str(exc))
+            apply_btn.clicked.connect(apply)
+            self.detail_layout.addWidget(manual)
+
+        self.copy_btn=QPushButton("COPIAR PICK");self.copy_btn.clicked.connect(lambda:self.copy_pick(card));self.detail_layout.addWidget(self.copy_btn)
+        self.detail_layout.addStretch()
+
+    def copy_pick(self,card:PredictionCard)->None:
+        p=card.prediction;m=card.market
+        text=f"{p.player.full_name} — HR"
         if m.quote and m.quote.american_odds is not None:
-            from mlb_hr.domain.math import payout_for_stake
-            total,profit=payout_for_stake(self.service.stake,m.quote.american_odds)
-            age=""
-            if m.quote.last_update:
-                mins=max(0,int((m.quote.fetched_at-m.quote.last_update).total_seconds()/60));age=f" · hace {mins} min"
-            odds_text=f"FANDUEL {m.quote.american_odds:+d}{age}\n${self.service.stake:.0f} → ${total:.2f} total · +${profit:.2f}\n{m.label.value}"
-        od=QLabel(odds_text);od.setAlignment(Qt.AlignmentFlag.AlignCenter);od.setWordWrap(True);self.detail_layout.insertWidget(4,od)
-        why=QLabel("¿POR QUÉ?");why.setStyleSheet("font-weight:700;margin-top:8px;");self.detail_layout.insertWidget(5,why)
-        idx=6
-        for reason in p.reasons[:4]:
-            lab=QLabel("✓ "+reason);lab.setWordWrap(True);self.detail_layout.insertWidget(idx,lab);idx+=1
-        risk=QLabel("RIESGO PRINCIPAL\n"+("⚠ "+p.main_risk if p.main_risk else "✓ Sin advertencias importantes"));risk.setWordWrap(True);risk.setObjectName("warning" if p.main_risk else "good");self.detail_layout.insertWidget(idx,risk);idx+=1
-        manual=QHBoxLayout();spin=QSpinBox();spin.setRange(-10000,10000);spin.setValue(300);manual.addWidget(spin);btn=QPushButton("Cuota manual");manual.addWidget(btn);self.detail_layout.insertLayout(idx,manual);idx+=1
-        qualified_for_market=p.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY}
-        spin.setEnabled(qualified_for_market);btn.setEnabled(qualified_for_market)
-        if not qualified_for_market:
-            spin.setToolTip("Las cuotas solo se aplican después de que el modelo cualifica al candidato.")
-            btn.setToolTip("Las cuotas solo se aplican después de que el modelo cualifica al candidato.")
-        def apply():
-            val=spin.value();
-            if -100<val<100: QMessageBox.information(self,"Cuota","Usa cuota americana >= +100 o <= -100.");return
-            try:self.service.apply_manual_odds(card,val);self._render_table();self._show_detail(card)
-            except Exception as exc:QMessageBox.warning(self,"Cuota",str(exc))
-        btn.clicked.connect(apply)
-        copy=QPushButton("COPIAR PICK");copy.clicked.connect(lambda:QGuiApplication.clipboard().setText(f"{p.player.full_name} — HR"+(f" | FanDuel {m.quote.american_odds:+d}" if m.quote and m.quote.american_odds else "")));self.detail_layout.insertWidget(idx,copy)
+            text+=f" | FanDuel {m.quote.american_odds:+d}"
+        QGuiApplication.clipboard().setText(text)
+        self.copy_btn.setText("COPIADO ✓")
+        QTimer.singleShot(1500,lambda:self.copy_btn.setText("COPIAR PICK"))
 
     def _render_combos(self)->None:
         while self.combo_row.count():

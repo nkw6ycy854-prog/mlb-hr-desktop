@@ -94,3 +94,17 @@ def test_today_defaults_to_top_15_and_can_expand():
     assert widget.table.rowCount() == 20
     assert widget.view_all_btn.text() == "VER TOP 15"
     assert widget.table.horizontalHeaderItem(7).text() == "Estado"
+
+
+def test_copy_pick_shows_confirmation_and_resets():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    card = _make_card(0, 0.4)
+
+    widget._show_detail(card)
+    button = widget.copy_btn
+    button.click()
+
+    assert button.text() == "COPIADO ✓"
+    assert "HR" in QApplication.clipboard().text()
+
