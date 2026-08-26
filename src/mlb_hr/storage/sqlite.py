@@ -440,6 +440,40 @@ class SQLiteStore:
                 ORDER BY p.created_at DESC LIMIT ?
                 """,(limit,)))
 
+    def history_prediction_rows(self, limit: int = 2000) -> list[sqlite3.Row]:
+        with self.connection() as con:
+            return list(con.execute(
+                """
+                SELECT p.*, ml.reference_stake, ml.odds_at_prediction, ml.edge_pp_at_prediction,
+                       s.status settlement_status, s.actual_hr_binary, s.actual_hr_count,
+                       pe.amount pnl_amount
+                FROM predictions p
+                LEFT JOIN model_ledger ml ON ml.prediction_id=p.prediction_id
+                LEFT JOIN settlements s ON s.prediction_id=p.prediction_id AND s.active=1
+                LEFT JOIN paper_bankroll_events pe
+                  ON pe.prediction_id=p.prediction_id
+                 AND pe.event_type IN ('WIN','LOSS')
+                WHERE p.is_latest_pregame=1 AND p.pregame_valid=1
+                ORDER BY p.created_at DESC LIMIT ?
+                """, (limit,)))
+
+    def history_combination_rows(self, limit: int = 1000) -> list[sqlite3.Row]:
+        with self.connection() as con:
+            return list(con.execute(
+                """SELECT c.*, cs.status combination_status, cs.won, cs.profit_loss
+                   FROM combinations c
+                   LEFT JOIN combination_settlements cs
+                     ON cs.combination_id=c.combination_id AND cs.active=1
+                   ORDER BY c.created_at DESC
+                   LIMIT ?""", (limit,)))
+
+    def prediction_rows_by_ids(self, ids: list[str]) -> dict[str, sqlite3.Row]:
+        if not ids: return {}
+        marks=','.join('?' for _ in ids)
+        with self.connection() as con:
+            rows=con.execute(f"SELECT * FROM predictions WHERE prediction_id IN ({marks})", ids).fetchall()
+        return {str(r['prediction_id']):r for r in rows}
+
     def history_summary(self) -> dict[str, Any]:
         with self.connection() as con:
             row=con.execute(

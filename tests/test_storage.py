@@ -54,3 +54,52 @@ def test_combination_filter_status_persists(tmp_path:Path):
     with st.connection() as con:
         row=con.execute("SELECT filter_status FROM combinations WHERE combination_id=?",(combo.combination_id,)).fetchone()
     assert row['filter_status']=='FALLBACK'
+
+
+def test_history_prediction_rows_include_settlement_and_pnl(tmp_path:Path):
+    root=Path(__file__).resolve().parents[1]
+    st=SQLiteStore(tmp_path/'hist.db',root/'migrations');st.migrate()
+    st.save_snapshot(snapshot_id='s1',game_pk=1,lineup={},starter={},weather=None,source_timestamps={},feature_vector={},model_package_hash='h',deterministic_seed=1,created_at=datetime.now(timezone.utc))
+    p=make_prediction('p1','s1',.3);st.save_prediction(p);st.lock_prediction('p1')
+    st.save_model_ledger(prediction_id='p1',reference_stake=10.0,odds_at_prediction=150,decimal_odds=2.5,implied_probability=.4,edge_pp=5.0)
+    st.save_settlement(ResultRecord(prediction_id='p1',game_pk=1,player_id=10,status=SettlementStatus.CONFIRMED_SETTLEMENT,actual_hr_count=1,actual_hr_binary=1))
+    st.apply_paper_settlement('p1',won=True)
+
+    rows=st.history_prediction_rows()
+    assert len(rows)==1
+    row=rows[0]
+    assert row['prediction_id']=='p1'
+    assert row['classification']=='PRIMARY'
+    assert float(row['final_probability'])==.3
+    assert row['odds_at_prediction']==150
+    assert row['settlement_status']=='CONFIRMED_SETTLEMENT'
+    assert row['actual_hr_binary']==1
+    assert row['pnl_amount'] is not None
+
+
+def test_history_combination_rows_include_filter_status_and_settlement(tmp_path:Path):
+    root=Path(__file__).resolve().parents[1]
+    st=SQLiteStore(tmp_path/'hist2.db',root/'migrations');st.migrate()
+    combo=make_combo(filter_status=CombinationFilterStatus.QUALIFIED)
+    st.save_combination(combo)
+    st.save_combination_settlement(combo.combination_id,status='CONFIRMED_SETTLEMENT',won=True,void_leg_count=0,profit_loss=25.0)
+
+    rows=st.history_combination_rows()
+    assert len(rows)==1
+    row=rows[0]
+    assert row['combination_id']==combo.combination_id
+    assert row['filter_status']=='QUALIFIED'
+    assert row['combination_status']=='CONFIRMED_SETTLEMENT'
+    assert row['won']==1
+    assert row['profit_loss']==25.0
+
+
+def test_prediction_rows_by_ids_returns_map(tmp_path:Path):
+    root=Path(__file__).resolve().parents[1]
+    st=SQLiteStore(tmp_path/'hist3.db',root/'migrations');st.migrate()
+    st.save_snapshot(snapshot_id='s1',game_pk=1,lineup={},starter={},weather=None,source_timestamps={},feature_vector={},model_package_hash='h',deterministic_seed=1,created_at=datetime.now(timezone.utc))
+    p=make_prediction('p1','s1',.3);st.save_prediction(p)
+
+    rows=st.prediction_rows_by_ids(['p1','missing'])
+    assert set(rows.keys())=={'p1'}
+    assert rows['p1']['player_name']=='Batter'
