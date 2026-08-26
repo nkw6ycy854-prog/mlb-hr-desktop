@@ -440,6 +440,13 @@ class SQLiteStore:
                 ORDER BY p.created_at DESC LIMIT ?
                 """,(limit,)))
 
+    def healthcheck(self) -> bool:
+        try:
+            with self.connection() as con:
+                return con.execute("SELECT 1").fetchone()[0] == 1
+        except Exception:
+            return False
+
     def history_prediction_rows(self, limit: int = 2000) -> list[sqlite3.Row]:
         with self.connection() as con:
             return list(con.execute(

@@ -103,3 +103,9 @@ def test_prediction_rows_by_ids_returns_map(tmp_path:Path):
     rows=st.prediction_rows_by_ids(['p1','missing'])
     assert set(rows.keys())=={'p1'}
     assert rows['p1']['player_name']=='Batter'
+
+
+def test_healthcheck_reports_true_on_working_database(tmp_path:Path):
+    root=Path(__file__).resolve().parents[1]
+    st=SQLiteStore(tmp_path/'health.db',root/'migrations');st.migrate()
+    assert st.healthcheck() is True
