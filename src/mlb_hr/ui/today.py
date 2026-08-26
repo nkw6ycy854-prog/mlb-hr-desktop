@@ -5,12 +5,13 @@ from datetime import timezone
 from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView,QComboBox,QFrame,QGridLayout,QHBoxLayout,QLabel,QMessageBox,QPushButton,
+    QAbstractItemView,QFrame,QGridLayout,QHBoxLayout,QLabel,QMessageBox,QPushButton,
     QScrollArea,QSpinBox,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
-from mlb_hr.domain.enums import MarketPriceLabel, ModelClassification
+from mlb_hr.domain.enums import ModelClassification, ModelHealth, SlateQuality
 from mlb_hr.domain.models import PredictionCard, SlateResult
+from mlb_hr.ui.presentation import display_quote, practical_status, visible_cards
 from mlb_hr.ui.workers import FunctionWorker
 
 
@@ -22,18 +23,23 @@ class TodayWidget(QWidget):
     def _build(self)->None:
         root=QVBoxLayout(self);root.setContentsMargins(22,18,22,22);root.setSpacing(14)
         top=QHBoxLayout();
-        title=QLabel("MLB HR");title.setObjectName("title");top.addWidget(title);top.addStretch()
+        title=QLabel("HOY");title.setObjectName("title");top.addWidget(title);top.addStretch()
         self.status=QLabel("Listo");self.status.setObjectName("muted");top.addWidget(self.status)
         self.refresh_btn=QPushButton("ACTUALIZAR");self.refresh_btn.setObjectName("primaryButton");self.refresh_btn.clicked.connect(self.refresh);top.addWidget(self.refresh_btn)
         root.addLayout(top)
-        meta=QHBoxLayout();self.health=QLabel("● MODELO —");self.lineups=QLabel("0/0 LINEUPS");self.updated=QLabel("Sin actualizar");
-        for x in (self.health,self.lineups,self.updated):meta.addWidget(x)
-        meta.addStretch();meta.addWidget(QLabel("Apuesta base:"));self.stake=QComboBox();self.stake.addItems(["$5","$10","$20","$25","$50"]);self.stake.setCurrentText(f"${int(getattr(self.service,'stake',10))}");self.stake.currentTextChanged.connect(self._stake_changed);meta.addWidget(self.stake)
+        meta=QHBoxLayout();self.model_status=QLabel("● Modelo —");self.data_status=QLabel("● Datos —");self.lineups=QLabel("0/0 juegos listos");self.updated=QLabel("Sin actualizar")
+        for x in (self.model_status,self.data_status,self.lineups,self.updated):meta.addWidget(x)
+        meta.addStretch()
         root.addLayout(meta)
         self.banner=QLabel("");self.banner.setWordWrap(True);self.banner.hide();root.addWidget(self.banner)
-        sec=QLabel("MEJORES HR DEL DÍA");sec.setObjectName("section");root.addWidget(sec)
+        sec_row=QHBoxLayout()
+        sec=QLabel("MEJORES HR DEL DÍA");sec.setObjectName("section");sec_row.addWidget(sec);sec_row.addStretch()
+        self.expanded=False
+        self.view_all_btn=QPushButton("VER TODOS");self.view_all_btn.clicked.connect(self.toggle_all);sec_row.addWidget(self.view_all_btn)
+        root.addLayout(sec_row)
         body=QHBoxLayout();root.addLayout(body,1)
-        self.table=QTableWidget(0,7);self.table.setHorizontalHeaderLabels(["#","Jugador","HR","Conf.","FanDuel","Retorno","Acción"]);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);body.addWidget(self.table,3)
+        columns=["#","Jugador","HR%","Clasificación","Confianza","Mejor cuota","FanDuel","Estado"]
+        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);body.addWidget(self.table,3)
         self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setMaximumWidth(400);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail();body.addWidget(self.detail,1)
         combo_label=QLabel("COMBINACIONES");combo_label.setObjectName("section");root.addWidget(combo_label)
         self.combo_row=QHBoxLayout();root.addLayout(self.combo_row)
@@ -44,8 +50,9 @@ class TodayWidget(QWidget):
 
     def _loaded(self,result:SlateResult)->None:
         self.current=result;self.refresh_btn.setEnabled(True);self.status.setText("Actualización completa")
-        self.health.setText(f"● MODELO {result.model_health.value}");self.health.setObjectName("good" if result.model_health.value=="GREEN" else "warning")
-        self.lineups.setText(f"{result.confirmed_lineups}/{result.total_games} JUEGOS LISTOS")
+        self.model_status.setText(f"● Modelo {result.model_health.value}");self.model_status.setObjectName("good" if result.model_health==ModelHealth.GREEN else "warning")
+        self.data_status.setText(f"● Datos {result.slate_quality.value}");self.data_status.setObjectName("good" if result.slate_quality==SlateQuality.GREEN else "warning")
+        self.lineups.setText(f"{result.confirmed_lineups}/{result.total_games} juegos listos")
         self.updated.setText("Actualizado "+result.updated_at.astimezone().strftime("%I:%M %p").lstrip("0"))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_table();self._render_combos()
@@ -53,32 +60,20 @@ class TodayWidget(QWidget):
     def _error(self,msg:str)->None:
         self.refresh_btn.setEnabled(True);self.status.setText("Error al actualizar");QMessageBox.warning(self,"Actualización",msg)
 
-    def _stake_changed(self,text:str)->None:
-        try:value=float(text.replace("$",""))
-        except ValueError:return
-        self.service.stake=value
-        if self.store is not None:
-            try:self.store.set_state("default_stake",value)
-            except Exception:pass
-        if self.current:self._render_table();self._render_combos();self._select_row(self.table.currentRow(),0) if self.table.currentRow()>=0 else None
-
-    def _display_cards(self)->list[PredictionCard]:
-        if not self.current:return []
-        # Normal UX shows actionable candidates first. If model is unvalidated, show highest analyzed rows
-        # with PASS so the user can inspect software status without mistaking them for recommendations.
-        actionable=[c for c in self.current.cards if c.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY,ModelClassification.WATCH}]
-        return (actionable or self.current.cards)[:20]
+    def toggle_all(self)->None:
+        self.expanded=not self.expanded
+        self.view_all_btn.setText("VER TOP 15" if self.expanded else "VER TODOS")
+        self._render_table()
 
     def _render_table(self)->None:
-        cards=self._display_cards();self.table.setRowCount(len(cards));self._cards=cards
+        if not self.current:
+            self.table.setRowCount(0);self._cards=[];self._clear_detail();return
+        eligible=[c for c in self.current.cards if c.prediction.classification!=ModelClassification.NOT_ELIGIBLE]
+        cards=visible_cards(eligible,expanded=self.expanded)
+        self.table.setRowCount(len(cards));self._cards=cards
         for r,card in enumerate(cards):
-            p=card.prediction;m=card.market
-            odds="—" if not m.quote or m.quote.american_odds is None else f"{m.quote.american_odds:+d}"
-            payout="—"
-            if m.quote and m.quote.american_odds is not None:
-                from mlb_hr.domain.math import payout_for_stake
-                payout=f"${payout_for_stake(self.service.stake,m.quote.american_odds)[0]:.2f}"
-            vals=[str(r+1),p.player.full_name,f"{p.final_hr_probability*100:.1f}%",p.confidence_label.value,odds,payout,p.user_action.value]
+            p=card.prediction
+            vals=[str(r+1),p.player.full_name,f"{p.final_hr_probability*100:.1f}%",p.classification.value,p.confidence_label.value,display_quote(card,best=True),display_quote(card,best=False),practical_status(p.classification)]
             for c,v in enumerate(vals):
                 item=QTableWidgetItem(v);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c!=1 else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft);self.table.setItem(r,c,item)
         self.table.resizeColumnsToContents();self.table.horizontalHeader().setStretchLastSection(True)
