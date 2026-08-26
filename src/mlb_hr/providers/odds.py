@@ -114,8 +114,7 @@ def _parse_quotes(payload: dict[str, Any], game: GameContext, fetched: datetime)
     name_map = _lineup_name_map(game)
     out: list[OddsQuote] = []
     for book in payload.get("bookmakers", []):
-        if str(book.get("key", "")).lower() != "fanduel":
-            continue
+        bookmaker = str(book.get("title") or book.get("key") or "Unknown")
         book_update = _parse_dt(book.get("last_update"))
         for market in book.get("markets", []):
             if market.get("key") != "batter_home_runs":
@@ -143,7 +142,7 @@ def _parse_quotes(payload: dict[str, Any], game: GameContext, fetched: datetime)
                     OddsQuote(
                         game_pk=game.game_pk,
                         player_id=player_id,
-                        bookmaker="FanDuel",
+                        bookmaker=bookmaker,
                         market="batter_home_runs",
                         american_odds=american,
                         decimal_odds=dec,
