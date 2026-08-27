@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import mlb_hr
 import mlb_hr.selftest as selftest
 
 
@@ -37,3 +38,9 @@ def test_run_self_test_exposes_ui_import_and_runtime_paths():
     assert "bundled_model_hash" in result["details"]
     assert "runtime_statcast" in result["details"]
     assert result["checks"]["sqlite_migration"] is True
+
+
+def test_run_self_test_exposes_app_version():
+    result = selftest.run_self_test()
+
+    assert result["details"]["app_version"] == mlb_hr.__version__

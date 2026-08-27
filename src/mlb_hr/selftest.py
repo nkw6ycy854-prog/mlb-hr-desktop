@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 
+import mlb_hr
 from mlb_hr.resources_runtime import bundled_model_text, packaged_migrations_dir
 from mlb_hr.storage.paths import resolve_app_paths
 
@@ -23,6 +24,7 @@ def runtime_statcast_status()->dict:
 def run_self_test(*,require_runtime_data:bool=False)->dict:
     checks={}
     details={}
+    details['app_version']=mlb_hr.__version__
     checks['python_runtime']=sys.version_info[:2]==(3,13)
     try:
         import PySide6  # noqa: F401
