@@ -297,6 +297,9 @@ class SlateResult:
     confirmed_lineups: int
     total_games: int
     updated_at: datetime
+    pregame_games: int = 0
+    live_games: int = 0
+    final_games: int = 0
     messages: list[str] = field(default_factory=list)
 
 

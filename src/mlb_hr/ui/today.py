@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth
 from mlb_hr.domain.models import PredictionCard, SlateResult
 from mlb_hr.ui.components import ResponsiveGrid
-from mlb_hr.ui.presentation import display_quote, practical_status, quote_display, visible_cards
+from mlb_hr.ui.presentation import data_health_ok, display_quote, practical_status, quote_display, visible_cards
 from mlb_hr.ui.workers import FunctionWorker
 
 
@@ -29,7 +29,7 @@ class TodayWidget(QWidget):
         self.status=QLabel("Listo");self.status.setObjectName("muted");top.addWidget(self.status)
         self.refresh_btn=QPushButton("ACTUALIZAR");self.refresh_btn.setObjectName("primaryButton");self.refresh_btn.clicked.connect(self.refresh);top.addWidget(self.refresh_btn)
         root.addLayout(top)
-        meta=QHBoxLayout();self.model_status=QLabel("● Modelo —");self.data_status=QLabel("● Datos —");self.lineups=QLabel("0/0 juegos listos");self.updated=QLabel("Sin actualizar")
+        meta=QHBoxLayout();self.model_status=QLabel("● Modelo —");self.data_status=QLabel("● Datos —");self.lineups=QLabel("0 juegos pregame");self.updated=QLabel("Sin actualizar")
         for x in (self.model_status,self.data_status,self.lineups,self.updated):meta.addWidget(x)
         meta.addStretch()
         root.addLayout(meta)
@@ -65,7 +65,7 @@ class TodayWidget(QWidget):
         self.hide_health_failure()
         self.current=result;self.refresh_btn.setEnabled(True);self.status.setText("Actualización completa")
         self.model_status.setText(f"● Modelo {result.model_health.value}");self.model_status.setObjectName("good" if result.model_health==ModelHealth.GREEN else "warning")
-        self.lineups.setText(f"{result.confirmed_lineups}/{result.total_games} juegos listos")
+        self.lineups.setText(f"{result.pregame_games} juegos pregame · {result.live_games} en vivo · {result.final_games} finalizados")
         self.updated.setText("Actualizado "+result.updated_at.astimezone().strftime("%I:%M %p").lstrip("0"))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_table();self._render_combos()
@@ -74,9 +74,7 @@ class TodayWidget(QWidget):
         self.refresh_btn.setEnabled(True);self.status.setText("Error al actualizar");QMessageBox.warning(self,"Actualización",msg)
 
     def apply_health_report(self,report)->None:
-        statcast_item=next((i for i in report.items if i.key=="statcast"),None)
-        db_item=next((i for i in report.items if i.key=="database"),None)
-        data_ok=(statcast_item is None or statcast_item.state=="OK") and (db_item is None or db_item.state=="OK")
+        data_ok=data_health_ok(report)
         self.data_status.setText(f"● Datos {'OK' if data_ok else 'ERROR'}")
         self.data_status.setObjectName("good" if data_ok else "warning")
 

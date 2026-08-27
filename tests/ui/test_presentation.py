@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from mlb_hr.domain.enums import ModelClassification
 from mlb_hr.ui.presentation import (
     combination_result_label,
+    data_health_ok,
     format_local_time,
     player_result_label,
     practical_status,
@@ -71,3 +72,26 @@ def test_combination_result_label_uses_ganada_perdida_pendiente():
     assert combination_result_label("HR") == "GANADA"
     assert combination_result_label("NO_HR") == "PERDIDA"
     assert combination_result_label("PENDING") == "PENDIENTE"
+
+
+def _health_item(key, state):
+    return SimpleNamespace(key=key, state=state)
+
+
+def _report(*items):
+    return SimpleNamespace(items=items)
+
+
+def test_data_health_ok_true_when_statcast_and_database_ok():
+    report = _report(_health_item("statcast", "OK"), _health_item("database", "OK"), _health_item("model", "OK"))
+    assert data_health_ok(report) is True
+
+
+def test_data_health_ok_false_when_statcast_errors():
+    report = _report(_health_item("statcast", "ERROR"), _health_item("database", "OK"))
+    assert data_health_ok(report) is False
+
+
+def test_data_health_ok_false_when_database_errors():
+    report = _report(_health_item("statcast", "OK"), _health_item("database", "ERROR"))
+    assert data_health_ok(report) is False

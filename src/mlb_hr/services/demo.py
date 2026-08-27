@@ -44,7 +44,10 @@ class DemoAnalysisService:
             quote=OddsQuote(pred.game_pk,pred.player.player_id,"FanDuel","batter_home_runs",odds,dec,1/dec,now-timedelta(minutes=3),now,DataFreshness.FRESH,"DEMO")
             market=self.market.evaluate(p,quote,self.stake)
             cards.append(PredictionCard(pred,market))
-        return SlateResult(cards,self.combos.build(cards),SlateQuality.GREEN,ModelHealth.GREEN,15,15,now,["MODO DEMO — datos ficticios, no apostar con estos resultados."])
+        return SlateResult(
+            cards,self.combos.build(cards),SlateQuality.GREEN,ModelHealth.GREEN,15,15,now,
+            15,0,0,["MODO DEMO — datos ficticios, no apostar con estos resultados."],
+        )
 
     def apply_manual_odds(self,card,american_odds):
         quote=self.market.manual_quote(card.prediction.game_pk,card.prediction.player.player_id,american_odds)

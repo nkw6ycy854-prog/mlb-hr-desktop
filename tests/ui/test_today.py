@@ -141,6 +141,9 @@ def test_today_shows_watch_and_no_bet_when_no_primary_secondary_exist():
         confirmed_lineups=15,
         total_games=15,
         updated_at=datetime.now(timezone.utc),
+        pregame_games=15,
+        live_games=0,
+        final_games=0,
         messages=["NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS"],
     )
 
@@ -151,6 +154,34 @@ def test_today_shows_watch_and_no_bet_when_no_primary_secondary_exist():
     assert widget.table.rowCount() == 3
     statuses = {widget.table.item(r, 7).text() for r in range(widget.table.rowCount())}
     assert statuses == {"VIGILAR", "NO CUMPLE FILTRO"}
+    assert "NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS" in widget.banner.text()
+
+
+def test_today_header_shows_pregame_live_final_breakdown_not_juegos_listos():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    result = SlateResult(
+        cards=[],
+        combinations=[],
+        slate_quality=SlateQuality.GREEN,
+        model_health=ModelHealth.GREEN,
+        confirmed_lineups=15,
+        total_games=15,
+        updated_at=datetime.now(timezone.utc),
+        pregame_games=0,
+        live_games=9,
+        final_games=6,
+        messages=["NO HAY JUEGOS PREGAME DISPONIBLES PARA ANALIZAR"],
+    )
+
+    widget._loaded(result)
+
+    text = widget.lineups.text()
+    assert "juegos listos" not in text
+    assert "0" in text and "pregame" in text.lower()
+    assert "9" in text and ("vivo" in text.lower())
+    assert "6" in text and ("final" in text.lower())
+    assert "NO HAY JUEGOS PREGAME DISPONIBLES PARA ANALIZAR" in widget.banner.text()
 
 
 def test_copy_pick_shows_confirmation_and_resets():

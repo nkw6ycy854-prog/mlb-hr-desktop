@@ -40,6 +40,8 @@ from mlb_hr.storage.analytics import AnalyticsStore
 from mlb_hr.storage.sqlite import SQLiteStore
 from mlb_hr.uncertainty.engine import UncertaintyEngine
 
+_EXCLUDED_GAME_STATES = {"LIVE", "FINAL", "POSTPONED", "SUSPENDED", "CANCELLED"}
+
 
 class AnalysisService:
     def __init__(
@@ -73,13 +75,16 @@ class AnalysisService:
         day=day or datetime.now().date()
         schedule=self.mlb.schedule(day)
         if not schedule.ok:
-            return SlateResult([],[],SlateQuality.RED,ModelHealth.RED,0,0,datetime.now(timezone.utc),["MLB schedule unavailable"])
+            return SlateResult([],[],SlateQuality.RED,ModelHealth.RED,0,0,datetime.now(timezone.utc),0,0,0,["MLB schedule unavailable"])
         games=schedule.data or []
         hydrated: list[GameContext]=[]
         for game in games:
             r=self.mlb.hydrate_game(game)
             hydrated.append(r.data if r.ok and r.data is not None else game)
         confirmed=sum(1 for g in hydrated if g.away_lineup and g.away_lineup.confirmed and g.home_lineup and g.home_lineup.confirmed)
+        pregame_games=sum(1 for g in hydrated if g.state.value not in _EXCLUDED_GAME_STATES)
+        live_games=sum(1 for g in hydrated if g.state.value=="LIVE")
+        final_games=sum(1 for g in hydrated if g.state.value=="FINAL")
         slate_quality=SlateQuality.GREEN if confirmed==len(hydrated) and hydrated else SlateQuality.YELLOW
         model_health=ModelHealth.GREEN if self.package.release_ready else ModelHealth.YELLOW
         if not self.analytics.has_data():
@@ -92,7 +97,8 @@ class AnalysisService:
                     f"{confirmed}/{len(hydrated)} JUEGOS LISTOS · {pending} ESPERANDO LINEUP."
                 )
             return SlateResult(
-                [],[],SlateQuality.RED,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),messages
+                [],[],SlateQuality.RED,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),
+                pregame_games,live_games,final_games,messages,
             )
         predictive_cards: list[PredictionCard]=[]
         ai_context: dict[str,tuple[CandidateFeatureBundle,object,CriticResult,list[DataWarning]]]={}
@@ -100,7 +106,7 @@ class AnalysisService:
         change_messages: list[str]=[]
 
         for game in hydrated:
-            if game.state.value in {"LIVE","FINAL","POSTPONED","SUSPENDED","CANCELLED"}:
+            if game.state.value in _EXCLUDED_GAME_STATES:
                 continue
             if (game.away_lineup and game.away_lineup.confirmed and game.home_lineup and game.home_lineup.confirmed
                     and game.away_starter is not None and game.home_starter is not None):
@@ -272,11 +278,19 @@ class AnalysisService:
                 "Analizando únicamente juegos con ambos lineups confirmados."
             )
         if not any(c.prediction.classification in {ModelClassification.PRIMARY,ModelClassification.SECONDARY} for c in ranked):
-            if confirmed>0:
-                messages.append("NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS")
-            else:
-                messages.append("ESPERANDO LINEUPS CONFIRMADOS")
-        return SlateResult(ranked,combos,slate_quality,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),messages)
+            messages.append(self._empty_picks_message(pregame_games,confirmed))
+        return SlateResult(
+            ranked,combos,slate_quality,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),
+            pregame_games,live_games,final_games,messages,
+        )
+
+    @staticmethod
+    def _empty_picks_message(pregame_games:int,confirmed:int)->str:
+        if pregame_games==0:
+            return "NO HAY JUEGOS PREGAME DISPONIBLES PARA ANALIZAR"
+        if confirmed>0:
+            return "NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS"
+        return "ESPERANDO LINEUPS CONFIRMADOS"
 
     def _assign_market_and_odds(self,predictive_cards:list[PredictionCard],game_lookup:dict[int,GameContext])->None:
         by_game: dict[int,list[PredictionCard]]={}

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from mlb_hr import __version__
 from mlb_hr.ui.components import make_scroll_page
 from mlb_hr.ui.history import HistoryWidget
+from mlb_hr.ui.presentation import data_health_ok
 from mlb_hr.ui.settings import SettingsWidget
 from mlb_hr.ui.today import TodayWidget
 
@@ -87,6 +88,7 @@ class MainWindow(QMainWindow):
             self.history.refresh()
 
     def apply_health_report(self, report) -> None:
+        self._apply_sidebar_health(report)
         if hasattr(self.today, "apply_health_report"):
             self.today.apply_health_report(report)
         if hasattr(self.settings, "apply_health_report"):
@@ -99,6 +101,15 @@ class MainWindow(QMainWindow):
                 on_open_settings=lambda: self.set_page(2),
                 on_retry=lambda: self.health_retry_callback() if self.health_retry_callback else None,
             )
+
+    def _apply_sidebar_health(self, report) -> None:
+        model_item = next((i for i in report.items if i.key == "model"), None)
+        if model_item:
+            self.status_model.setText(f"Modelo ● {model_item.state}")
+            self.status_model.setObjectName("good" if model_item.state == "OK" else "warning")
+        data_ok = data_health_ok(report)
+        self.status_data.setText(f"Datos ● {'OK' if data_ok else 'ERROR'}")
+        self.status_data.setObjectName("good" if data_ok else "warning")
 
     def apply_health_error(self, msg: str) -> None:
         from mlb_hr.services.health import HealthItem, HealthReport

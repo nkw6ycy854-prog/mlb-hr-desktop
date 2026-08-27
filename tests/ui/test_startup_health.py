@@ -221,3 +221,20 @@ def test_apply_health_report_refreshes_settings_sistema_section_too(monkeypatch)
     ok_report = _report(True)
     w.apply_health_report(ok_report)
     assert w.settings.health_report is ok_report
+
+
+def test_apply_health_report_updates_sidebar_model_and_data_labels_when_ok(monkeypatch):
+    w = _main_window(monkeypatch)
+
+    w.apply_health_report(_report(True))
+
+    assert "OK" in w.status_model.text()
+    assert "OK" in w.status_data.text()
+
+
+def test_apply_health_report_updates_sidebar_model_and_data_labels_when_error(monkeypatch):
+    w = _main_window(monkeypatch)
+
+    w.apply_health_report(_report(False))
+
+    assert "ERROR" in w.status_data.text()

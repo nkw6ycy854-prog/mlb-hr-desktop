@@ -69,3 +69,9 @@ def player_result_label(result: str) -> str:
 
 def combination_result_label(result: str) -> str:
     return _COMBINATION_RESULT_LABELS.get(result, result)
+
+
+def data_health_ok(report) -> bool:
+    statcast_item = next((i for i in report.items if i.key == "statcast"), None)
+    db_item = next((i for i in report.items if i.key == "database"), None)
+    return (statcast_item is None or statcast_item.state == "OK") and (db_item is None or db_item.state == "OK")
