@@ -1,6 +1,6 @@
 APP_STYLESHEET = """
 QMainWindow { background: #111318; color: #f5f7fb; }
-QWidget { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #edf0f5; }
+QWidget { background: #111318; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #edf0f5; }
 QFrame#sidebar { background: #161920; border: 0; border-right: 1px solid #252b34; }
 QPushButton#navButton { background: transparent; border: 0; border-radius: 7px; padding: 10px 14px; text-align: left; color: #9da5b4; font-weight: 600; }
 QPushButton#navButton:hover { background: #1f232c; color: #f5f7fb; }
@@ -26,5 +26,5 @@ QHeaderView::section { background: #20242c; color: #aeb6c4; border: 0; padding: 
 QFrame#card { background: #171a20; border: 1px solid #252b34; border-radius: 10px; }
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #171a20; border: 1px solid #343b48; border-radius: 6px; padding: 7px; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #5b6270; border-color: #2a2f38; }
-QScrollArea { border: 0; }
+QScrollArea { background: #111318; border: 0; }
 """
