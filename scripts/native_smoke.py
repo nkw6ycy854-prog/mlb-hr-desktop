@@ -42,8 +42,12 @@ def main()->int:
         details['artifact_self_test']=payload
         checks['artifact_self_test_pass']=cp.returncode==0 and bool(payload.get('passed'))
         for key,value in (payload.get('checks') or {}).items():checks[key]=bool(value)
-        bundled_hash=str((payload.get('details') or {}).get('bundled_model_hash') or '')
+        payload_details=payload.get('details') or {}
+        bundled_hash=str(payload_details.get('bundled_model_hash') or '')
         details['bundled_model_hash']=bundled_hash
+        details['bundled_model_version']=payload_details.get('bundled_model_version')
+        details['runtime_statcast']=payload_details.get('runtime_statcast')
+        details['runtime_paths']=payload_details.get('runtime_paths')
         checks['expected_model_hash']=True if not a.expected_model_hash else bundled_hash==a.expected_model_hash
     except Exception as exc:
         checks['artifact_executable_exists']=False;checks['artifact_self_test_pass']=False;checks['expected_model_hash']=False;details['error']=str(exc)

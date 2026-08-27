@@ -85,6 +85,22 @@ def run_self_test(*,require_runtime_data:bool=False)->dict:
         details['runtime_statcast_error']=str(exc)
         if require_runtime_data:
             checks['statcast_runtime_available']=False
+    try:
+        paths=resolve_app_paths()
+        details['runtime_paths']={
+            'data_dir':str(paths.data_dir),'cache_dir':str(paths.cache_dir),'log_dir':str(paths.log_dir),
+            'db_path':str(paths.db_path),'parquet_dir':str(paths.parquet_dir),'model_dir':str(paths.model_dir),
+        }
+    except Exception as exc:
+        details['runtime_paths_error']=str(exc)
+    try:
+        from mlb_hr.ui.main_window import MainWindow
+        from mlb_hr.ui.today import TodayWidget
+        from mlb_hr.ui.history import HistoryWidget
+        from mlb_hr.ui.settings import SettingsWidget
+        checks['ui_import']=all([MainWindow,TodayWidget,HistoryWidget,SettingsWidget])
+    except Exception as exc:
+        checks['ui_import']=False;details['ui_import_error']=str(exc)
     result={'created_at':datetime.now(timezone.utc).isoformat(),'checks':checks,'details':details,'passed':all(checks.values())}
     return result
 
