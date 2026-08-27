@@ -6,7 +6,7 @@ from zoneinfo import available_timezones
 from PySide6.QtCore import QThreadPool, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QFrame, QLabel, QLineEdit,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QLabel, QLineEdit,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -17,6 +17,8 @@ from mlb_hr.selftest import run_self_test
 from mlb_hr.ui.workers import FunctionWorker
 
 STAKE_OPTIONS = ["$5", "$10", "$20", "$25", "$50"]
+CUSTOM_STAKE_LABEL = "Personalizada…"
+_PREDEFINED_STAKE_VALUES = {5.0: "$5", 10.0: "$10", 20.0: "$20", 25.0: "$25", 50.0: "$50"}
 DENSITY_OPTIONS = [("Cómoda", "comfortable"), ("Compacta", "compact")]
 AI_PROVIDER_OPTIONS = [
     ("Ninguno", "none"), ("Groq", "groq"), ("Gemini", "gemini"),
@@ -107,13 +109,30 @@ class SettingsWidget(QWidget):
     def _build_general(self, root: QVBoxLayout) -> None:
         form = _section("GENERAL", root)
         self.stake = QComboBox()
+        self.stake.setMinimumWidth(140)
         self.stake.addItems(STAKE_OPTIONS)
-        current_stake = f"${int(self.store.get_state('default_stake', 10.0))}"
-        if current_stake in STAKE_OPTIONS:
-            self.stake.setCurrentText(current_stake)
+        self.stake.addItem(CUSTOM_STAKE_LABEL)
+        current_stake_value = float(self.store.get_state("default_stake", 10.0))
+        matched_label = _PREDEFINED_STAKE_VALUES.get(current_stake_value)
+        self.stake.setCurrentText(matched_label or CUSTOM_STAKE_LABEL)
         form.addRow("Apuesta base", self.stake)
 
+        self.stake_custom_label = QLabel("Monto personalizado")
+        self.stake_custom = QDoubleSpinBox()
+        self.stake_custom.setMinimumWidth(140)
+        self.stake_custom.setRange(0.01, 1_000_000.0)
+        self.stake_custom.setDecimals(2)
+        self.stake_custom.setPrefix("$")
+        self.stake_custom.setValue(current_stake_value)
+        is_custom = matched_label is None
+        self.stake_custom_label.setVisible(is_custom)
+        self.stake_custom.setVisible(is_custom)
+        form.addRow(self.stake_custom_label, self.stake_custom)
+        self.stake.currentTextChanged.connect(self._on_stake_selection_changed)
+
         self.timezone = QComboBox()
+        self.timezone.setMinimumWidth(220)
+        self.timezone.setMaxVisibleItems(12)
         zones = sorted(available_timezones())
         self.timezone.addItems(zones)
         current_tz = str(self.store.get_state("timezone_name", "") or "")
@@ -220,11 +239,19 @@ class SettingsWidget(QWidget):
         self.selftest_feedback.setWordWrap(True)
         form.addRow(self.selftest_feedback)
 
+    def _on_stake_selection_changed(self, text: str) -> None:
+        is_custom = text == CUSTOM_STAKE_LABEL
+        self.stake_custom_label.setVisible(is_custom)
+        self.stake_custom.setVisible(is_custom)
+
     def save(self) -> None:
         changed: list[str] = []
         restart_needed = False
 
-        stake_value = float(self.stake.currentText().replace("$", ""))
+        if self.stake.currentText() == CUSTOM_STAKE_LABEL:
+            stake_value = round(float(self.stake_custom.value()), 2)
+        else:
+            stake_value = float(self.stake.currentText().replace("$", ""))
         if stake_value != float(self.store.get_state("default_stake", 10.0)):
             changed.append("Apuesta base")
         self.store.set_state("default_stake", stake_value)

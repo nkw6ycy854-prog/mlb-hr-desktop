@@ -27,4 +27,16 @@ QFrame#card { background: #171a20; border: 1px solid #252b34; border-radius: 10p
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #171a20; border: 1px solid #343b48; border-radius: 6px; padding: 7px; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #5b6270; border-color: #2a2f38; }
 QScrollArea { background: #111318; border: 0; }
+QComboBox { padding-right: 30px; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 24px; border: 0; border-left: 1px solid #343b48; }
+QComboBox::down-arrow { width: 10px; height: 10px; }
+QComboBox QAbstractItemView { background: #171a20; color: #edf0f5; border: 1px solid #343b48; outline: 0; selection-background-color: #29323d; selection-color: #ffffff; }
+QComboBox QAbstractItemView::item { padding: 6px 10px; min-height: 22px; }
+QComboBox QAbstractItemView::item:hover { background: #232a35; }
+QComboBox QAbstractItemView::item:selected { background: #29323d; color: #ffffff; }
+QScrollBar:vertical { background: #171a20; width: 12px; margin: 0; border-radius: 6px; }
+QScrollBar::handle:vertical { background: #343b48; border-radius: 6px; min-height: 24px; }
+QScrollBar::handle:vertical:hover { background: #3f4756; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; background: none; border: none; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 """

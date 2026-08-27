@@ -65,6 +65,51 @@ def test_current_timezone_value_remains_selectable():
     assert widget.timezone.currentText() == "America/Santo_Domingo"
 
 
+def test_stake_combo_has_minimum_width_to_avoid_clipping():
+    widget = _widget()
+    assert widget.stake.minimumWidth() >= 120
+
+
+def test_timezone_combo_popup_is_bounded_and_scrollable():
+    widget = _widget()
+    assert 0 < widget.timezone.maxVisibleItems() <= 15
+
+
+def test_stake_combo_includes_personalizada_option():
+    widget = _widget()
+    items = [widget.stake.itemText(i) for i in range(widget.stake.count())]
+    assert "Personalizada…" in items
+
+
+def test_custom_stake_spinbox_hidden_by_default_for_predefined_stake():
+    store = _FakeStore()
+    store.set_state("default_stake", 25.0)
+    widget = _widget(store)
+    assert widget.stake.currentText() == "$25"
+    assert widget.stake_custom.isHidden() is True
+
+
+def test_selecting_personalizada_shows_custom_stake_spinbox():
+    widget = _widget()
+    widget.stake.setCurrentText("Personalizada…")
+    assert widget.stake_custom.isHidden() is False
+
+
+def test_saving_custom_stake_persists_and_reloads_on_reopen():
+    store = _FakeStore()
+    widget = _widget(store)
+    widget.stake.setCurrentText("Personalizada…")
+    widget.stake_custom.setValue(37.5)
+    widget.save()
+
+    assert store.get_state("default_stake") == 37.5
+
+    widget2 = _widget(store)
+    assert widget2.stake.currentText() == "Personalizada…"
+    assert widget2.stake_custom.value() == 37.5
+    assert widget2.stake_custom.isHidden() is False
+
+
 def test_api_keys_are_masked():
     widget = _widget()
     assert widget.odds_key.echoMode() == widget.odds_key.EchoMode.Password

@@ -34,3 +34,26 @@ def test_base_widget_rule_sets_an_explicit_dark_background():
 def test_scroll_area_rule_sets_an_explicit_dark_background():
     body = _rule_body("QScrollArea")
     assert "background" in body
+
+
+def test_combobox_popup_view_has_dark_background_and_readable_text():
+    # QComboBox QAbstractItemView is the dropdown popup's list view -- a
+    # separate top-level widget that does not inherit QComboBox's own closed-
+    # state background, so it needs its own explicit rule or it falls back to
+    # a light native popup with light text (illegible).
+    body = _rule_body("QComboBox QAbstractItemView")
+    assert "background" in body
+    assert "color" in body
+
+
+def test_combobox_popup_item_selected_and_hover_states_are_styled():
+    for token in [
+        "QComboBox QAbstractItemView::item:selected",
+        "QComboBox QAbstractItemView::item:hover",
+    ]:
+        assert token in APP_STYLESHEET
+
+
+def test_popup_scrollbar_is_styled_dark():
+    for token in ["QScrollBar:vertical", "QScrollBar::handle:vertical"]:
+        assert token in APP_STYLESHEET
