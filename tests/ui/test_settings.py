@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QThreadPool, QUrl
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
 
@@ -191,7 +191,11 @@ def test_abrir_carpeta_de_datos_opens_real_runtime_path(tmp_path):
 
     widget.open_data_folder_btn.click()
 
-    assert opened["path"] == str(tmp_path)
+    # QUrl.toLocalFile() always normalizes to forward slashes, even on Windows,
+    # while str(tmp_path) uses native OS separators -- round-trip the expected
+    # side through the same QUrl normalization so this assertion is
+    # platform-independent, matching what _open_data_folder() itself does.
+    assert opened["path"] == QUrl.fromLocalFile(str(tmp_path)).toLocalFile()
 
 
 def test_ejecutar_selftest_shows_pass_and_records_timestamp():
