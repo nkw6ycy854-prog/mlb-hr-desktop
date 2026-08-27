@@ -14,6 +14,6 @@ def test_bundled_model_and_migrations_are_runtime_resources():
         st=SQLiteStore(Path(td)/'app.db',migrations);st.migrate()
         with st.connection() as con:
             version=con.execute('SELECT max(version) FROM schema_migrations').fetchone()[0]
-        assert version==3
+        assert version==4
         model=Path(td)/'model';model.mkdir();(model/'model_manifest.json').write_text(json.dumps(raw),encoding='utf-8')
         assert ModelPackage(model).release_ready is False

@@ -1,0 +1,1 @@
+ALTER TABLE combinations ADD COLUMN filter_status TEXT NOT NULL DEFAULT 'QUALIFIED';
