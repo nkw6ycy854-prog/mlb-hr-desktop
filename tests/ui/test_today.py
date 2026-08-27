@@ -31,7 +31,7 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def _make_card(index: int, probability: float) -> PredictionCard:
+def _make_card(index: int, probability: float, *, classification: ModelClassification = ModelClassification.PRIMARY) -> PredictionCard:
     player = PlayerRef(player_id=index, full_name=f"Player {index}")
     pitcher = PlayerRef(player_id=9000 + index, full_name="Opposing Pitcher")
     distribution = ProbabilityDistribution(
@@ -55,7 +55,7 @@ def _make_card(index: int, probability: float) -> PredictionCard:
         confidence_score=0.8,
         confidence_label=ConfidenceLabel.HIGH,
         distribution=distribution,
-        classification=ModelClassification.PRIMARY,
+        classification=classification,
         user_action=UserActionLabel.RECOMMENDED,
         integrity=IntegrityStatus.PASS,
         critic=CriticVerdict.PASS,
@@ -119,6 +119,38 @@ def test_today_defaults_to_top_15_and_can_expand():
     assert widget.table.rowCount() == 20
     assert widget.view_all_btn.text() == "VER TOP 15"
     assert widget.table.horizontalHeaderItem(7).text() == "Estado"
+
+
+def test_today_shows_watch_and_no_bet_when_no_primary_secondary_exist():
+    # Reproduces the exact reported scenario: a confirmed slate with zero
+    # PRIMARY/SECONDARY candidates but several WATCH/NO_BET ones. HOY must never
+    # go empty in this case -- only NOT_ELIGIBLE rows may be omitted.
+    app()
+    widget = TodayWidget(_make_service(), None)
+    cards = [
+        _make_card(0, 0.20, classification=ModelClassification.WATCH),
+        _make_card(1, 0.15, classification=ModelClassification.WATCH),
+        _make_card(2, 0.10, classification=ModelClassification.NO_BET),
+        _make_card(3, 0.05, classification=ModelClassification.NOT_ELIGIBLE),
+    ]
+    result = SlateResult(
+        cards=cards,
+        combinations=[],
+        slate_quality=SlateQuality.GREEN,
+        model_health=ModelHealth.GREEN,
+        confirmed_lineups=15,
+        total_games=15,
+        updated_at=datetime.now(timezone.utc),
+        messages=["NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS"],
+    )
+
+    widget._loaded(result)
+
+    # 3 visible rows: the WATCH/WATCH/NO_BET cards. The NOT_ELIGIBLE card is the
+    # only one allowed to be excluded.
+    assert widget.table.rowCount() == 3
+    statuses = {widget.table.item(r, 7).text() for r in range(widget.table.rowCount())}
+    assert statuses == {"VIGILAR", "NO CUMPLE FILTRO"}
 
 
 def test_copy_pick_shows_confirmation_and_resets():

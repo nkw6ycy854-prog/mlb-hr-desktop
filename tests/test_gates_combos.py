@@ -68,3 +68,23 @@ def test_not_eligible_is_never_used_for_fallback():
     cards = [card("A", .15, ModelClassification.WATCH),
              card("X", .30, ModelClassification.NOT_ELIGIBLE)]
     assert "BEST_2_MAN" not in {c.kind for c in CombinationEngine().build(cards)}
+
+
+def test_combination_engine_builds_fallback_from_the_exact_reported_slate_shape():
+    # Same shape as the reported "HOY empty" slate: a confirmed slate with zero
+    # PRIMARY/SECONDARY, several WATCH/NO_BET, and one NOT_ELIGIBLE row passed
+    # through unfiltered (as analyze_slate() actually does -- the engine itself
+    # is responsible for excluding NOT_ELIGIBLE).
+    cards = [
+        card("Watch One", .20, ModelClassification.WATCH),
+        card("Watch Two", .15, ModelClassification.WATCH),
+        card("No Bet One", .10, ModelClassification.NO_BET),
+        card("Ineligible", .90, ModelClassification.NOT_ELIGIBLE),
+    ]
+    combos = {c.kind: c for c in CombinationEngine().build(cards)}
+    assert "BEST_2_MAN" in combos
+    best2 = combos["BEST_2_MAN"]
+    assert best2.filter_status == CombinationFilterStatus.FALLBACK
+    used_names = {leg.player_name for leg in best2.legs}
+    assert "Ineligible" not in used_names
+    assert used_names <= {"Watch One", "Watch Two", "No Bet One"}
