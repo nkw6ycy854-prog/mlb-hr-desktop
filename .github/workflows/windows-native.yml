@@ -187,20 +187,94 @@ jobs:
           Copy-Item "packaging\windows\SELF TEST.bat" (Join-Path $bundle "SELF TEST.bat") -Force
           Copy-Item "packaging\windows\README-WINDOWS.txt" (Join-Path $bundle "README-WINDOWS.txt") -Force
 
+          # This base zip is CI plumbing only (consumed by
+          # scripts/create_windows_full_release.sh, which bundles real local
+          # Statcast on top of it). It must never be treated as a publishable
+          # release asset -- it has no runtime_data/statcast. That gap is exactly
+          # what shipped broken in MLB-HR-Windows-v1.0.0.zip.
           Compress-Archive `
             -Path (Join-Path $bundle "*") `
             -DestinationPath "artifacts\MLB-HR-Windows-App.zip" `
             -CompressionLevel Optimal `
             -Force
 
-          Copy-Item `
-            "build_reports\windows.json" `
-            "artifacts\windows.json" `
-            -Force
+          Write-Host "=========================================="
+          Write-Host "WINDOWS BASE PACKAGE CREATED (not release-ready, no Statcast)"
+          Write-Host "artifacts\MLB-HR-Windows-App.zip"
+          Write-Host "=========================================="
+
+      - name: Assemble and gate Windows FULL package (CI fixture Statcast)
+        shell: pwsh
+        run: |
+          # The real, proprietary Statcast dataset (734MB) lives only on the
+          # release engineer's machine and is gitignored -- it cannot and should
+          # not be shipped to CI. This step instead proves the FULL assembly +
+          # packaging + self-test chain actually works end-to-end, against the
+          # real compiled app.exe, using a tiny fixture checked into the repo at
+          # tests/fixtures/statcast_ci_fixture. If this step is broken, the real
+          # local release build (with real Statcast) would be broken too -- so
+          # this is a real regression gate, not a rubber stamp.
+          $bundle = (Get-Content "windows_bundle_path.txt" -Raw).Trim()
+          $appVersion = (& ".\.venv\Scripts\python.exe" -c "import mlb_hr; print(mlb_hr.__version__)").Trim()
+          $modelVersion = ($env:MODEL_PACKAGE_DIR -split '[\\/]')[-1]
+
+          $selfTestCmd = ('["' + $bundle.Replace('\','\\') + '\\app.exe", "--self-test", "--require-runtime-data"]')
+
+          & ".\.venv\Scripts\python.exe" scripts/windows_full_package.py build `
+            --bundle-dir "$bundle" `
+            --statcast-src "tests\fixtures\statcast_ci_fixture" `
+            --output-zip "artifacts\MLB-HR-Windows-FULL-CI-FIXTURE.zip" `
+            --manifest-path "artifacts\full-release-manifest.json" `
+            --app-version "$appVersion" `
+            --model-version "$modelVersion" `
+            --model-hash "$env:EXPECTED_MODEL_HASH" `
+            --release-commit "$env:GITHUB_SHA" `
+            --self-test-cmd $selfTestCmd
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows FULL package assembly/self-test gate failed: statcast_runtime_available was not confirmed true. This run CANNOT be used as a release source."
+          }
+
+          & ".\.venv\Scripts\python.exe" scripts/windows_full_package.py validate `
+            --zip "artifacts\MLB-HR-Windows-FULL-CI-FIXTURE.zip"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows FULL package failed post-build validation."
+          }
+
+          $manifest = Get-Content "artifacts\full-release-manifest.json" -Raw | ConvertFrom-Json
+          if (-not $manifest.statcast_runtime_available) {
+            throw "statcast_runtime_available must be true in the FULL package manifest."
+          }
 
           Write-Host "=========================================="
-          Write-Host "WINDOWS PACKAGE CREATED"
-          Write-Host "artifacts\MLB-HR-Windows-App.zip"
+          Write-Host "WINDOWS FULL GATE = PASS (fixture Statcast, real app.exe)"
+          Write-Host "statcast_runtime_available: $($manifest.statcast_runtime_available)"
+          Write-Host "statcast_parquet_count: $($manifest.statcast_parquet_count)"
+          Write-Host "=========================================="
+
+      - name: Finalize windows.json gate report
+        shell: pwsh
+        run: |
+          $report = Get-Content "build_reports\windows.json" -Raw | ConvertFrom-Json
+          $manifest = Get-Content "artifacts\full-release-manifest.json" -Raw | ConvertFrom-Json
+
+          $report | Add-Member -NotePropertyName "full_package_manifest" -NotePropertyValue $manifest -Force
+          $report.checks | Add-Member -NotePropertyName "statcast_runtime_available" -NotePropertyValue ([bool]$manifest.statcast_runtime_available) -Force
+
+          $allChecks = $report.checks.PSObject.Properties | ForEach-Object { [bool]$_.Value }
+          $report.passed = -not ($allChecks -contains $false)
+
+          if (-not $report.passed) {
+            Write-Host ($report | ConvertTo-Json -Depth 10)
+            throw "Final gate report has passed=false after requiring statcast_runtime_available."
+          }
+
+          $report | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 "build_reports\windows.json"
+          Copy-Item "build_reports\windows.json" "artifacts\windows.json" -Force
+
+          Write-Host "=========================================="
+          Write-Host "WINDOWS_NATIVE_GATE = PASS (base checks + statcast_runtime_available)"
           Write-Host "=========================================="
 
       - name: Upload Windows native artifact
@@ -209,5 +283,7 @@ jobs:
           name: MLB-HR-Windows-Native
           path: |
             artifacts/MLB-HR-Windows-App.zip
+            artifacts/MLB-HR-Windows-FULL-CI-FIXTURE.zip
+            artifacts/full-release-manifest.json
             artifacts/windows.json
           if-no-files-found: error
