@@ -37,6 +37,7 @@ def test_missing_runtime_statcast_is_reported_explicitly():
     assert result.slate_quality == SlateQuality.RED
     assert result.model_health == ModelHealth.GREEN
     assert any("DATOS HISTÓRICOS NO DISPONIBLES" in message for message in result.messages)
+    assert result.game_contexts == ()
 
 
 def _confirmed_game(game_pk: int, state: GameState) -> GameContext:
@@ -91,6 +92,28 @@ def test_all_games_live_or_final_reports_zero_pregame_with_correct_message():
     assert result.final_games == 1
     assert any("NO HAY JUEGOS PREGAME DISPONIBLES PARA ANALIZAR" in m for m in result.messages)
     assert not any("NO HAY PICKS HR CALIFICADOS" in m for m in result.messages)
+    assert [g.game_pk for g in result.game_contexts] == [1, 2, 3]
+    assert [g.state for g in result.game_contexts] == [GameState.LIVE, GameState.LIVE, GameState.FINAL]
+
+
+def test_missing_analytics_still_populates_game_contexts_for_hydrated_games():
+    # Even when Statcast is unavailable and analyze_slate returns early with
+    # no cards, the games it already hydrated from MLB must still be exposed
+    # via game_contexts so POR PARTIDOS can render them (waiting-for-lineup,
+    # LIVE, FINAL, etc.) instead of silently dropping the whole slate.
+    service = object.__new__(AnalysisService)
+    service.analytics = _MissingAnalytics()
+    service.mlb = _MLBWithGames([_confirmed_game(7, GameState.PREGAME)])
+    service.package = SimpleNamespace(release_ready=True)
+    service.ai = None
+    service.ai_top_n = 0
+    service.combos = SimpleNamespace(build=lambda _ranked: [])
+    service.store = SimpleNamespace(save_combination=lambda _combo: None)
+
+    result = service.analyze_slate(date(2026, 8, 26))
+
+    assert result.cards == []
+    assert [g.game_pk for g in result.game_contexts] == [7]
 
 
 def test_empty_picks_message_prioritizes_no_pregame_games_case():

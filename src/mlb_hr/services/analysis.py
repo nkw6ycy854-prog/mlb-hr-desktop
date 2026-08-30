@@ -98,7 +98,7 @@ class AnalysisService:
                 )
             return SlateResult(
                 [],[],SlateQuality.RED,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),
-                pregame_games,live_games,final_games,messages,
+                pregame_games,live_games,final_games,messages,tuple(hydrated),
             )
         predictive_cards: list[PredictionCard]=[]
         ai_context: dict[str,tuple[CandidateFeatureBundle,object,CriticResult,list[DataWarning]]]={}
@@ -281,7 +281,7 @@ class AnalysisService:
             messages.append(self._empty_picks_message(pregame_games,confirmed))
         return SlateResult(
             ranked,combos,slate_quality,model_health,confirmed,len(hydrated),datetime.now(timezone.utc),
-            pregame_games,live_games,final_games,messages,
+            pregame_games,live_games,final_games,messages,tuple(hydrated),
         )
 
     @staticmethod

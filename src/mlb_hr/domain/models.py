@@ -301,6 +301,11 @@ class SlateResult:
     live_games: int = 0
     final_games: int = 0
     messages: list[str] = field(default_factory=list)
+    # Raw per-game context (lineups, starters, state, game_time) that
+    # analyze_slate() already builds internally. Additive/backward-compatible:
+    # presentation read-models (e.g. POR PARTIDOS) consume this alongside
+    # `cards` without changing what produces a card.
+    game_contexts: tuple["GameContext", ...] = ()
 
 
 @dataclass(slots=True)
