@@ -7,6 +7,7 @@ from mlb_hr.domain.enums import (
     CombinationFilterStatus,
     ConfidenceLabel,
     CriticVerdict,
+    GameState,
     IntegrityStatus,
     MarketPriceLabel,
     ModelClassification,
@@ -17,12 +18,16 @@ from mlb_hr.domain.enums import (
 from mlb_hr.domain.models import (
     Combination,
     CombinationLeg,
+    GameContext,
+    LineupEntry,
     MarketDecision,
     PlayerRef,
     Prediction,
     PredictionCard,
     ProbabilityDistribution,
     SlateResult,
+    TeamLineup,
+    VenueRef,
 )
 from mlb_hr.ui.today import TodayWidget
 
@@ -270,6 +275,96 @@ def test_combo_card_shows_not_enough_players_message_when_missing():
     combined = _combo_frame_texts(widget)
 
     assert "NO HAY SUFICIENTES JUGADORES ANALIZADOS" in combined
+
+
+def _lineup_entry(index: int, name: str, order: int) -> LineupEntry:
+    return LineupEntry(player=PlayerRef(player_id=index, full_name=name), batting_order=order)
+
+
+def _game_context(
+    game_pk: int, *, away_entries=(), home_entries=(),
+    away_confirmed=True, home_confirmed=True, state=GameState.PREGAME,
+    game_time=datetime(2026, 8, 26, 23, 15, tzinfo=timezone.utc),
+) -> GameContext:
+    return GameContext(
+        game_pk=game_pk, game_date=game_time.date() if game_time else None, game_time=game_time,
+        away_team_id=1, away_team_name="Team A", home_team_id=2, home_team_name="Team B",
+        venue=VenueRef(1, "Park"), state=state,
+        away_lineup=TeamLineup(team_id=1, team_name="Team A", entries=list(away_entries), confirmed=away_confirmed),
+        home_lineup=TeamLineup(team_id=2, team_name="Team B", entries=list(home_entries), confirmed=home_confirmed),
+        away_starter=PlayerRef(500, "Away SP"), home_starter=PlayerRef(501, "Home SP"),
+    )
+
+
+def _games_page_texts(widget) -> str:
+    from PySide6.QtWidgets import QPushButton
+    labels = [label.text() for label in widget.games_page.findChildren(QLabel)]
+    buttons = [button.text() for button in widget.games_page.findChildren(QPushButton)]
+    return "\n".join(labels + buttons)
+
+
+def test_top15_and_por_partidos_switch_toggles_view_stack():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    result = SlateResult(
+        cards=[], combinations=[], slate_quality=SlateQuality.GREEN, model_health=ModelHealth.GREEN,
+        confirmed_lineups=0, total_games=0, updated_at=datetime.now(timezone.utc),
+    )
+    widget._loaded(result)
+
+    assert widget.view_stack.currentIndex() == 0
+    widget.by_games_btn.click()
+    assert widget.view_stack.currentIndex() == 1
+    widget.top15_btn.click()
+    assert widget.view_stack.currentIndex() == 0
+
+
+def test_por_partidos_shows_both_teams_all_lineup_players_hr_descending_and_canonical_time():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    game = _game_context(
+        1,
+        away_entries=[_lineup_entry(1, "Low", 1), _lineup_entry(2, "High", 2)],
+        home_entries=[_lineup_entry(3, "Home Player", 1)],
+    )
+    away_low = _make_card(1, 0.05)
+    away_high = _make_card(2, 0.20)
+    home_card = _make_card(3, 0.10)
+    for card, game_pk in ((away_low, 1), (away_high, 1), (home_card, 1)):
+        card.prediction.game_pk = game_pk
+    result = SlateResult(
+        cards=[away_low, away_high, home_card], combinations=[], slate_quality=SlateQuality.GREEN,
+        model_health=ModelHealth.GREEN, confirmed_lineups=1, total_games=1,
+        updated_at=datetime.now(timezone.utc), pregame_games=1, game_contexts=(game,),
+    )
+
+    widget._loaded(result)
+    texts = _games_page_texts(widget)
+
+    assert texts.index("High") < texts.index("Low")
+    assert "Home Player" in texts
+    assert "Team A" in texts and "Team B" in texts
+    assert "7:15 PM" in texts
+
+
+def test_por_partidos_distinguishes_pending_lineup_live_and_final_empty_states():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    pending = _game_context(1, away_confirmed=True, home_confirmed=False)
+    live = _game_context(2, state=GameState.LIVE)
+    final = _game_context(3, state=GameState.FINAL)
+    result = SlateResult(
+        cards=[], combinations=[], slate_quality=SlateQuality.GREEN, model_health=ModelHealth.GREEN,
+        confirmed_lineups=0, total_games=3, updated_at=datetime.now(timezone.utc),
+        game_contexts=(pending, live, final),
+    )
+
+    widget._loaded(result)
+    texts = _games_page_texts(widget)
+
+    assert "ESPERANDO LINEUP" in texts
+    assert "EN VIVO" in texts
+    assert "FINAL" in texts
 
 
 def _detail_texts(widget) -> str:
