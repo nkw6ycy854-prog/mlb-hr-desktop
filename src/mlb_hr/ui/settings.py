@@ -14,6 +14,7 @@ from mlb_hr.ai.providers import GeminiProvider, OllamaProvider, OpenAICompatible
 from mlb_hr.providers.odds import OddsProvider
 from mlb_hr.providers.secrets import SecretStore
 from mlb_hr.selftest import run_self_test
+from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.ui.workers import FunctionWorker
 
 STAKE_OPTIONS = ["$5", "$10", "$20", "$25", "$50"]
@@ -434,14 +435,14 @@ class SettingsWidget(QWidget):
             return self._selftest_label(bool(last_passed), str(last_at))
         return "● NO EJECUTADO"
 
-    @staticmethod
-    def _selftest_label(passed: bool, iso_text: str) -> str:
+    def _selftest_label(self, passed: bool, iso_text: str) -> str:
         try:
             dt = datetime.fromisoformat(iso_text)
         except ValueError:
             time_text = iso_text
         else:
-            time_text = dt.astimezone().strftime("%I:%M %p").lstrip("0")
+            tz_name = self.store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
+            time_text = GameTimeService(tz_name).format_time(dt)
         return f"● {'PASS' if passed else 'FAIL'} · {time_text}"
 
     def apply_health_report(self, report) -> None:

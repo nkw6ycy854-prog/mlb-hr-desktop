@@ -1,27 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QFrame, QGridLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.services.history import HistoryFilter, HistoryService
 from mlb_hr.ui.presentation import combination_result_label, format_local_time, player_result_label
-
-
-def _default_timezone_name() -> str:
-    try:
-        key = getattr(datetime.now().astimezone().tzinfo, "key", None)
-        if key:
-            ZoneInfo(key)  # validate it is a usable IANA identifier
-            return key
-    except Exception:
-        pass
-    return "UTC"
 
 PLAYER_TABLE_HEADERS = ["Fecha", "Hora", "Jugador", "HR%", "Estado", "Cuota", "Resultado"]
 COMBINATION_TABLE_HEADERS = ["Fecha", "Inicio", "Tipo", "Selecciones", "Filtro", "Cuota", "Resultado", "P/L"]
@@ -40,7 +27,7 @@ class HistoryWidget(QWidget):
         super().__init__(parent)
         self.store = store
         self.history_service = HistoryService(store)
-        self.timezone_name = store.get_state("timezone_name", None) or _default_timezone_name()
+        self.timezone_name = store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
         self._period = "ALL"
         self._player_records: list = []
         self._combination_records: list = []
@@ -176,6 +163,7 @@ class HistoryWidget(QWidget):
     def refresh(self) -> None:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
+        self.timezone_name = self.store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
         filter_ = self.current_filter()
         self._player_records = self.history_service.player_records(filter_, now)
         self._combination_records = self.history_service.combination_records(filter_, now)

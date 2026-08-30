@@ -288,3 +288,12 @@ def test_ejecutar_selftest_fail_updates_sistema_last_selftest_label():
     _pump()
 
     assert "FAIL" in widget.last_selftest.text()
+
+
+def test_selftest_label_uses_configured_timezone_not_os_local():
+    store = _FakeStore()
+    store.set_state("timezone_name", "America/Santo_Domingo")
+    widget = _widget(store)
+    iso_text = datetime(2026, 8, 26, 23, 15, tzinfo=timezone.utc).isoformat()
+
+    assert widget._selftest_label(True, iso_text) == "● PASS · 7:15 PM"

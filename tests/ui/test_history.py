@@ -67,7 +67,7 @@ def test_combination_table_headers_match_spec():
     assert headers == ["Fecha", "Inicio", "Tipo", "Selecciones", "Filtro", "Cuota", "Resultado", "P/L"]
 
 
-def _tz_store():
+def _tz_store(timezone_name="America/Santo_Domingo"):
     game_time_p1 = datetime(2026, 8, 26, 23, 5, tzinfo=timezone.utc).isoformat()
     game_time_p2 = datetime(2026, 8, 26, 22, 40, tzinfo=timezone.utc).isoformat()
     created_at = datetime(2026, 8, 26, 20, 0, tzinfo=timezone.utc).isoformat()
@@ -92,6 +92,9 @@ def _tz_store():
     leg_settlement_rows = {"p1": {"actual_hr_binary": 1}, "p2": {"actual_hr_binary": None}}
 
     class _TzStore:
+        def __init__(self):
+            self.timezone_name = timezone_name
+
         def history_prediction_rows(self, limit=2000):
             return [player_row]
 
@@ -105,7 +108,7 @@ def _tz_store():
             return {k: v for k, v in leg_settlement_rows.items() if k in ids}
 
         def get_state(self, key, default=None):
-            return "America/Santo_Domingo" if key == "timezone_name" else default
+            return self.timezone_name if key == "timezone_name" else default
 
     return _TzStore()
 
@@ -181,3 +184,24 @@ def test_result_filter_labels_stay_hr_no_hr_pendiente_in_players_mode():
     widget = HistoryWidget(_tz_store())
     labels = [widget.result_combo.itemText(i) for i in range(widget.result_combo.count())]
     assert labels == ["Todos", "HR", "No HR", "Pendiente"]
+
+
+def test_history_defaults_to_santo_domingo_when_timezone_not_persisted():
+    # Matches GameTimeService.DEFAULT_TIMEZONE and TodayWidget's default, so an
+    # app that never touched Ajustes shows the same hour on every screen.
+    app()
+    widget = HistoryWidget(_tz_store(timezone_name=None))
+    time_item = widget.players_table.item(0, 1)
+    assert time_item.text() == "7:05 PM"
+
+
+def test_history_refresh_picks_up_a_persisted_timezone_change():
+    app()
+    store = _tz_store()
+    widget = HistoryWidget(store)
+    assert widget.players_table.item(0, 1).text() == "7:05 PM"
+
+    store.timezone_name = "UTC"
+    widget.refresh()
+
+    assert widget.players_table.item(0, 1).text() == "11:05 PM"
