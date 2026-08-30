@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from mlb_hr.domain.enums import ModelClassification
+from mlb_hr.services.game_time import GameTimeService
 
 
 def practical_status(classification: ModelClassification) -> str:
@@ -53,10 +53,7 @@ def quote_display(card) -> QuoteDisplay:
 
 
 def format_local_time(dt: datetime | None, timezone_name: str) -> str:
-    if dt is None:
-        return "—"
-    text = dt.astimezone(ZoneInfo(timezone_name)).strftime("%I:%M %p")
-    return text.lstrip("0") or text
+    return GameTimeService(timezone_name).format_time(dt)
 
 
 _PLAYER_RESULT_LABELS = {"HR": "HR", "NO_HR": "NO HR", "PENDING": "PENDIENTE"}
