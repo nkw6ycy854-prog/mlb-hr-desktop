@@ -51,7 +51,8 @@ class MainWindow(QMainWindow):
         self.nav_today = self._make_nav_button("Hoy", 0)
         self.nav_history = self._make_nav_button("Historial", 1)
         self.nav_settings = self._make_nav_button("Ajustes", 2)
-        for btn in (self.nav_today, self.nav_history, self.nav_settings):
+        self._nav_buttons = (self.nav_today, self.nav_history, self.nav_settings)
+        for btn in self._nav_buttons:
             sidebar_layout.addWidget(btn)
         sidebar_layout.addStretch()
 
@@ -85,6 +86,12 @@ class MainWindow(QMainWindow):
 
     def set_page(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
+        # set_page() can be reached without a nav-button click (e.g. "ABRIR
+        # AJUSTES" from TodayWidget's health-failure banner calls this
+        # directly) -- QButtonGroup only auto-toggles checked state on an
+        # actual click, so the sidebar has to be synced here explicitly.
+        for i, btn in enumerate(self._nav_buttons):
+            btn.setChecked(i == index)
         if index == 1:
             self.history.refresh()
 
