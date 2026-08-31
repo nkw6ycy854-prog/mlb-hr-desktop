@@ -39,10 +39,11 @@ def main()->int:
         worker.signals.error.connect(window.apply_health_error)
         QThreadPool.globalInstance().start(worker)
 
-    window.health_retry_callback=start_health
-    QTimer.singleShot(50,start_health)
     if not CONFIG.demo_mode:
         # Result reconciliation runs off the UI thread and never changes predictive weights.
+        # Wired below to run once startup health passes (MainWindow.apply_health_report),
+        # after every HOY ACTUALIZAR (TodayWidget.settlement_trigger), and on demand via
+        # ACTUALIZAR RESULTADOS in HISTORIAL (HistoryWidget's own default settlement_runner).
         def start_settlement_reconcile():
             worker=FunctionWorker(SettlementService(store).reconcile_pending)
             # Keep a Python reference until completion; QRunnable ownership is otherwise C++-side.
@@ -50,7 +51,11 @@ def main()->int:
             worker.signals.finished.connect(lambda _r: setattr(window,"_settlement_worker",None))
             worker.signals.error.connect(lambda _e: setattr(window,"_settlement_worker",None))
             QThreadPool.globalInstance().start(worker)
-        QTimer.singleShot(2500,start_settlement_reconcile)
+        window.settlement_trigger_callback=start_settlement_reconcile
+        window.today.settlement_trigger=start_settlement_reconcile
+
+    window.health_retry_callback=start_health
+    QTimer.singleShot(50,start_health)
     return app.exec()
 
 

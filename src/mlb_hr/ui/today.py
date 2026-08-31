@@ -21,7 +21,7 @@ from mlb_hr.ui.workers import FunctionWorker
 class TodayWidget(QWidget):
     def __init__(self,analysis_service,store=None,parent=None)->None:
         super().__init__(parent);self.service=analysis_service;self.store=store;self.thread_pool=QThreadPool.globalInstance();self.current:SlateResult|None=None;self._cards:list[PredictionCard]=[]
-        self._on_open_settings=None;self._on_retry=None
+        self._on_open_settings=None;self._on_retry=None;self.settlement_trigger=None
         self._build()
 
     def _build(self)->None:
@@ -117,6 +117,7 @@ class TodayWidget(QWidget):
         self.updated.setText("Actualizado "+self._time_service().format_time(result.updated_at))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_table();self._render_combos();self.render_game_views()
+        if self.settlement_trigger:self.settlement_trigger()
 
     def _error(self,msg:str)->None:
         self.refresh_btn.setEnabled(True);self.status.setText("Error al actualizar");QMessageBox.warning(self,"Actualización",msg)

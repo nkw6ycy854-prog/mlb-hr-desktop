@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QThreadPool, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QFrame, QGridLayout, QHBoxLayout,
     QLabel, QPushButton, QScrollArea, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -11,7 +11,10 @@ from PySide6.QtWidgets import (
 from mlb_hr.services.daily_accuracy import DailyAccuracyService
 from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.services.history import HistoryFilter, HistoryService
+from mlb_hr.services.settlement import SettlementService
+from mlb_hr.services.settlement_coordinator import SettlementCoordinator
 from mlb_hr.ui.presentation import combination_result_label, format_local_time, player_result_label
+from mlb_hr.ui.workers import FunctionWorker
 
 PLAYER_TABLE_HEADERS = ["Fecha", "Hora", "Jugador", "HR%", "Estado", "Cuota", "Resultado"]
 COMBINATION_TABLE_HEADERS = ["Fecha", "Inicio", "Tipo", "Selecciones", "Filtro", "Cuota", "Resultado", "P/L"]
@@ -26,11 +29,13 @@ _RESULT_LABELS_BY_MODE = {
 
 
 class HistoryWidget(QWidget):
-    def __init__(self, store, parent=None) -> None:
+    def __init__(self, store, parent=None, settlement_runner=None) -> None:
         super().__init__(parent)
         self.store = store
         self.history_service = HistoryService(store)
         self.daily_accuracy_service = DailyAccuracyService(store)
+        self.settlement_runner = settlement_runner or SettlementCoordinator(SettlementService(store)).refresh_pending
+        self.thread_pool = QThreadPool.globalInstance()
         self.timezone_name = store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
         self._period = "ALL"
         self._player_records: list = []
@@ -53,7 +58,17 @@ class HistoryWidget(QWidget):
         refresh_btn.setObjectName("primaryButton")
         refresh_btn.clicked.connect(self.refresh)
         top.addWidget(refresh_btn)
+        self.refresh_results_btn = QPushButton("ACTUALIZAR RESULTADOS")
+        self.refresh_results_btn.clicked.connect(self._refresh_results)
+        top.addWidget(self.refresh_results_btn)
         root.addLayout(top)
+
+        results_row = QHBoxLayout()
+        self.results_feedback = QLabel("")
+        self.results_feedback.setObjectName("muted")
+        results_row.addWidget(self.results_feedback)
+        results_row.addStretch()
+        root.addLayout(results_row)
 
         mode_row = QHBoxLayout()
         self.mode_group = QButtonGroup(self)
@@ -191,6 +206,31 @@ class HistoryWidget(QWidget):
         self._render_players_table()
         self._render_combinations_table()
         self.render_hits_today()
+
+    def _refresh_results(self) -> None:
+        self.refresh_results_btn.setEnabled(False)
+        self.results_feedback.setText("Actualizando resultados…")
+        self.results_feedback.setObjectName("muted")
+        worker = FunctionWorker(self.settlement_runner)
+        self._settlement_worker = worker
+        worker.signals.finished.connect(self._refresh_results_done)
+        worker.signals.error.connect(self._refresh_results_error)
+        self.thread_pool.start(worker)
+
+    def _refresh_results_done(self, result) -> None:
+        self.refresh_results_btn.setEnabled(True)
+        updated = getattr(result, "updated", None)
+        if updated:
+            self.results_feedback.setText(f"{updated} resultado(s) actualizados.")
+        else:
+            self.results_feedback.setText("Resultados actualizados. Sin cambios nuevos.")
+        self.results_feedback.setObjectName("good")
+        self.refresh()
+
+    def _refresh_results_error(self, msg: str) -> None:
+        self.refresh_results_btn.setEnabled(True)
+        self.results_feedback.setText(f"Error al actualizar resultados: {msg}")
+        self.results_feedback.setObjectName("warning")
 
     def _render_metrics(self) -> None:
         while self.metrics.count():

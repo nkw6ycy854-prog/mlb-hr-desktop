@@ -1,12 +1,18 @@
 from datetime import datetime, timedelta, timezone
 import json
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QThreadPool, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from mlb_hr.services.history import HistoryFilter
+from mlb_hr.services.settlement_coordinator import SettlementRunResult
 from mlb_hr.ui.history import HistoryWidget
+
+
+def _pump(timeout_ms=2000):
+    QThreadPool.globalInstance().waitForDone(timeout_ms)
+    QTest.qWait(50)
 
 
 def app():
@@ -303,3 +309,73 @@ def test_aciertos_hoy_empty_state_message():
     texts = _hits_today_texts(widget)
 
     assert "Todavía no hay predicciones acertadas para esta fecha." in texts
+
+
+def test_actualizar_resultados_disables_button_and_shows_progress_feedback():
+    app()
+    calls = []
+
+    def runner():
+        calls.append(1)
+        return SettlementRunResult(checked=1, updated=1, still_pending=0, errors=())
+
+    widget = HistoryWidget(_FakeStore(), settlement_runner=runner)
+
+    widget.refresh_results_btn.click()
+
+    assert widget.refresh_results_btn.isEnabled() is False
+    assert "Actualizando resultados" in widget.results_feedback.text()
+    _pump()
+    assert widget.refresh_results_btn.isEnabled() is True
+    assert calls == [1]
+
+
+def test_actualizar_resultados_shows_success_feedback_and_refreshes_views():
+    app()
+    store = _hits_today_store()
+
+    def runner():
+        return SettlementRunResult(checked=3, updated=2, still_pending=1, errors=())
+
+    widget = HistoryWidget(store, settlement_runner=runner)
+    widget.hits_today_btn.click()  # move onto ACIERTOS HOY so refresh() effects are visible there
+
+    widget.refresh_results_btn.click()
+    _pump()
+
+    assert widget.refresh_results_btn.isEnabled() is True
+    assert "actualizado" in widget.results_feedback.text().lower()
+    assert widget.results_feedback.objectName() == "good"
+    # refresh() ran again -- ACIERTOS HOY content is still correctly populated from the store.
+    assert "Jugadores acertados: 2" in _hits_today_texts(widget)
+
+
+def test_actualizar_resultados_shows_error_and_reenables_button():
+    app()
+
+    def failing_runner():
+        raise RuntimeError("MLB feed unavailable")
+
+    widget = HistoryWidget(_FakeStore(), settlement_runner=failing_runner)
+
+    widget.refresh_results_btn.click()
+    _pump()
+
+    assert widget.refresh_results_btn.isEnabled() is True
+    assert "mlb feed unavailable" in widget.results_feedback.text().lower()
+    assert widget.results_feedback.objectName() == "warning"
+
+
+def test_actualizar_resultados_never_reaches_analyze_slate():
+    # HistoryWidget's settlement_runner is injected directly (a bound
+    # SettlementCoordinator.refresh_pending in production); the widget never
+    # holds a reference to AnalysisService, so there is no attribute path to
+    # analyze_slate() from here at all.
+    app()
+    widget = HistoryWidget(_FakeStore(), settlement_runner=lambda: SettlementRunResult(0, 0, 0, ()))
+
+    assert not hasattr(widget, "analysis_service")
+    assert not hasattr(widget, "service")
+    widget.refresh_results_btn.click()
+    _pump()
+    assert widget.refresh_results_btn.isEnabled() is True

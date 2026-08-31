@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
         self.resize(1180, 760)
         self.paths = paths
         self.health_retry_callback = None
+        self.settlement_trigger_callback = None
 
         self.today = TodayWidget(analysis_service, store)
         self.history = HistoryWidget(store)
@@ -95,6 +96,8 @@ class MainWindow(QMainWindow):
             self.settings.apply_health_report(report)
         if report.critical_ok:
             self.today.refresh()
+            if self.settlement_trigger_callback:
+                self.settlement_trigger_callback()
         else:
             self.today.show_health_failure(
                 report,
