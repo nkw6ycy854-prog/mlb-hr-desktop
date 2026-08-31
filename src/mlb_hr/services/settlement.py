@@ -9,6 +9,27 @@ from mlb_hr.providers.mlb import MLBProvider
 from mlb_hr.storage.sqlite import SQLiteStore
 
 
+def _materially_same(active_row, rec: ResultRecord) -> bool:
+    """Whether a freshly-evaluated result carries the same real-world content
+    as the currently active settlement row, ignoring bookkeeping fields
+    (result_version, fetched_at, change_reason). Comparing only this -- never
+    timestamps -- is what makes a re-check of an unchanged provisional result
+    a no-op instead of a new version.
+    """
+    return (
+        active_row["status"] == rec.status.value
+        and active_row["actual_hr_count"] == rec.actual_hr_count
+        and active_row["actual_hr_binary"] == rec.actual_hr_binary
+        and active_row["actual_pa"] == rec.actual_pa
+        and active_row["actual_pa_vs_starter"] == rec.actual_pa_vs_starter
+        and active_row["actual_pa_vs_bullpen"] == rec.actual_pa_vs_bullpen
+        and active_row["appearance_status"] == rec.appearance_status.value
+        and active_row["verified_pbp"] == int(rec.verified_pbp)
+        and active_row["verified_box"] == int(rec.verified_box)
+        and active_row["result_source"] == rec.result_source
+    )
+
+
 class SettlementService:
     def __init__(self,store:SQLiteStore,mlb:MLBProvider|None=None)->None:
         self.store=store;self.mlb=mlb or MLBProvider();self.engine=PostgameEngine()
@@ -31,20 +52,33 @@ class SettlementService:
             if active and active["status"]==SettlementStatus.PROVISIONAL_SETTLEMENT.value:
                 fetched=datetime.fromisoformat(active["fetched_at"])
                 if fetched.tzinfo is None:fetched=fetched.replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc)-fetched>=timedelta(hours=24) and rec.status==SettlementStatus.PROVISIONAL_SETTLEMENT:
-                    same=(active["actual_hr_count"]==rec.actual_hr_count and active["actual_pa"]==rec.actual_pa and active["verified_pbp"]==int(rec.verified_pbp) and active["verified_box"]==int(rec.verified_box))
-                    if same:
-                        base=ResultRecord(
-                            prediction_id=row["prediction_id"],game_pk=game_pk,player_id=int(row["player_id"]),
-                            status=SettlementStatus.PROVISIONAL_SETTLEMENT,actual_hr_count=rec.actual_hr_count,actual_hr_binary=rec.actual_hr_binary,
-                            actual_pa=rec.actual_pa,actual_pa_vs_starter=rec.actual_pa_vs_starter,actual_pa_vs_bullpen=rec.actual_pa_vs_bullpen,
-                            appearance_status=rec.appearance_status,verified_pbp=rec.verified_pbp,verified_box=rec.verified_box,
-                            result_version=prev_version,result_source=rec.result_source,fetched_at=fetched,
-                        )
-                        rec=self.engine.confirm_unchanged(base)
+                if datetime.now(timezone.utc)-fetched>=timedelta(hours=24) and rec.status==SettlementStatus.PROVISIONAL_SETTLEMENT and _materially_same(active,rec):
+                    base=ResultRecord(
+                        prediction_id=row["prediction_id"],game_pk=game_pk,player_id=int(row["player_id"]),
+                        status=SettlementStatus.PROVISIONAL_SETTLEMENT,actual_hr_count=rec.actual_hr_count,actual_hr_binary=rec.actual_hr_binary,
+                        actual_pa=rec.actual_pa,actual_pa_vs_starter=rec.actual_pa_vs_starter,actual_pa_vs_bullpen=rec.actual_pa_vs_bullpen,
+                        appearance_status=rec.appearance_status,verified_pbp=rec.verified_pbp,verified_box=rec.verified_box,
+                        result_version=prev_version,result_source=rec.result_source,fetched_at=fetched,
+                    )
+                    rec=self.engine.confirm_unchanged(base)
             # Avoid version churn for unchanged non-final waiting states.
             if active and active["status"]==rec.status.value and rec.status not in {SettlementStatus.CONFIRMED_SETTLEMENT,SettlementStatus.PROVISIONAL_SETTLEMENT,SettlementStatus.REVIEW_REQUIRED}:
                 stats["waiting"]+=1;continue
+            # A provisional/review-required re-check whose real content hasn't
+            # changed at all is not a new fact -- do not version it. Only a
+            # material difference (or the terminal confirm above, which
+            # reassigns rec.status to CONFIRMED_SETTLEMENT) reaches save_settlement.
+            if active and rec.status in {SettlementStatus.PROVISIONAL_SETTLEMENT,SettlementStatus.REVIEW_REQUIRED} and _materially_same(active,rec):
+                stats["waiting"]+=1;continue
+            if active and rec.status==SettlementStatus.PROVISIONAL_SETTLEMENT and active["status"]==SettlementStatus.PROVISIONAL_SETTLEMENT.value:
+                self.store.log_audit(
+                    module="settlement",severity="INFO",event_code="PROVISIONAL_SETTLEMENT_CHANGED",
+                    payload={
+                        "previous":{"actual_hr_count":active["actual_hr_count"],"actual_hr_binary":active["actual_hr_binary"],"actual_pa":active["actual_pa"]},
+                        "new":{"actual_hr_count":rec.actual_hr_count,"actual_hr_binary":rec.actual_hr_binary,"actual_pa":rec.actual_pa},
+                    },
+                    prediction_id=row["prediction_id"],game_pk=game_pk,
+                )
             self.store.save_settlement(rec)
             if rec.status==SettlementStatus.CONFIRMED_SETTLEMENT:
                 stats["settled"]+=1
