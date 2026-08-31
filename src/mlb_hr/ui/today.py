@@ -5,7 +5,7 @@ from datetime import timezone
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView,QButtonGroup,QFrame,QHBoxLayout,QLabel,QMessageBox,QPushButton,
+    QAbstractItemView,QButtonGroup,QFrame,QHBoxLayout,QLabel,QLayout,QMessageBox,QPushButton,
     QScrollArea,QSizePolicy,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
@@ -61,15 +61,26 @@ class TodayWidget(QWidget):
         self.view_stack=QStackedWidget();root.addWidget(self.view_stack,1)
 
         top15_page=QWidget();top15_layout=QVBoxLayout(top15_page);top15_layout.setContentsMargins(0,0,0,0);top15_layout.setSpacing(14)
+        # SetMinimumSize makes this layout push its true minimum height up onto
+        # top15_page itself (not just report it via minimumSizeHint()) -- that is
+        # what the wrapping QScrollArea below needs to see in order to enable
+        # vertical scrolling instead of silently shrinking the page's content
+        # (the detail panel's labels) below their own readable minimum height.
+        top15_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         sec_row=QHBoxLayout()
         self.ranking_section_label=QLabel("MEJORES HR DEL DÍA");self.ranking_section_label.setObjectName("section");sec_row.addWidget(self.ranking_section_label);sec_row.addStretch()
         self.expanded=False
         self.view_all_btn=QPushButton("VER TODOS");self.view_all_btn.clicked.connect(self.toggle_all);sec_row.addWidget(self.view_all_btn)
         top15_layout.addLayout(sec_row)
         columns=["#","Jugador","HR%","Clasificación","Confianza","Mejor cuota","FanDuel","Estado"]
-        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Expanding)
+        # Vertical policy Minimum (not Expanding): in single-column mode, main_pair's
+        # grid gives row 0 (this table) its full sizeHint before row 1 (detail) gets
+        # anything, so an Expanding table starves detail below its own minimum
+        # height on a short window. The table has its own native scrollbar for
+        # extra rows, so it doesn't need to claim vertical space detail can't spare.
+        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Minimum)
         self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail()
-        self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);top15_layout.addWidget(self.main_pair,1)
+        self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);self.main_pair.layout().setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize);top15_layout.addWidget(self.main_pair,1)
         self.combo_section_label=QLabel("COMBINACIONES");self.combo_section_label.setObjectName("section");top15_layout.addWidget(self.combo_section_label)
         self.combo_grid=ResponsiveGrid(two_column_min_width=760);self._combo_frames:list[QFrame]=[];top15_layout.addWidget(self.combo_grid)
         # QStackedWidget sizes itself to fit the largest minimum-size demand among

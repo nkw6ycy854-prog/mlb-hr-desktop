@@ -561,3 +561,137 @@ def test_repeated_selection_and_clearing_does_not_accumulate_widgets():
     assert widget.detail_layout.count() == baseline
     assert _current_layout_texts(widget.detail_layout).count(_PLACEHOLDER_TEXT) == 1
 
+
+def _detail_label_geometries(widget):
+    positions = []
+    for i in range(widget.detail_layout.count()):
+        w = widget.detail_layout.itemAt(i).widget()
+        if isinstance(w, QLabel):
+            g = w.geometry()
+            positions.append((w.text(), g.y(), g.y() + g.height(), g.height(), w.minimumSizeHint().height()))
+    return positions
+
+
+def _top15_scroll_area(widget):
+    # The QScrollArea wrapping the TOP 15 page (view_stack page 0), added by
+    # the earlier POR PARTIDOS resize fix.
+    return widget.view_stack.widget(0)
+
+
+def test_detail_labels_do_not_overlap_at_a_short_viewport():
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.show()
+    widget.resize(760, 640)
+
+    widget._show_detail(_make_card(0, 0.4))
+    app().processEvents()
+
+    try:
+        positions = _detail_label_geometries(widget)
+        assert len(positions) > 1
+        for i in range(len(positions) - 1):
+            _, _, bottom, _, _ = positions[i]
+            _, top, _, _, _ = positions[i + 1]
+            assert bottom <= top, f"label {i} (bottom={bottom}) overlaps label {i+1} (top={top})"
+    finally:
+        app().setStyleSheet("")
+
+
+def test_detail_labels_keep_their_full_readable_height_at_a_short_viewport():
+    # No label may be compressed below its own minimumSizeHint -- that's what
+    # produces the overlap; the page must scroll instead of shrinking content.
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.show()
+    widget.resize(760, 640)
+
+    widget._show_detail(_make_card(0, 0.4))
+    app().processEvents()
+
+    try:
+        for text, _, _, height, min_height in _detail_label_geometries(widget):
+            assert height >= min_height, f"{text!r} got height={height} < minimumSizeHint={min_height}"
+    finally:
+        app().setStyleSheet("")
+
+
+def test_top15_page_scrolls_vertically_when_content_does_not_fit_a_short_viewport():
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.show()
+    widget.resize(760, 640)
+
+    widget._show_detail(_make_card(0, 0.4))
+    app().processEvents()
+
+    try:
+        scroll_area = _top15_scroll_area(widget)
+        assert scroll_area.verticalScrollBar().maximum() > 0
+    finally:
+        app().setStyleSheet("")
+
+
+def test_wide_viewport_shows_no_unnecessary_scroll_and_keeps_normal_layout():
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.show()
+    widget.resize(1400, 900)
+    cards = [_make_card(i, 1 - i / 100) for i in range(15)]
+    result = SlateResult(
+        cards=cards, combinations=[], slate_quality=SlateQuality.GREEN, model_health=ModelHealth.GREEN,
+        confirmed_lineups=1, total_games=1, updated_at=datetime.now(timezone.utc),
+    )
+
+    widget._loaded(result)
+    app().processEvents()
+
+    try:
+        scroll_area = _top15_scroll_area(widget)
+        assert scroll_area.verticalScrollBar().maximum() == 0
+        assert widget.main_pair.column_count == 2
+        for _, _, _, height, min_height in _detail_label_geometries(widget):
+            assert height >= min_height
+    finally:
+        app().setStyleSheet("")
+
+
+def test_selecting_different_players_repeatedly_keeps_the_layout_stable():
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.show()
+    widget.resize(760, 640)
+    cards = [_make_card(i, 1 - i / 100) for i in range(5)]
+
+    try:
+        for _ in range(3):
+            for card in cards:
+                widget._show_detail(card)
+                app().processEvents()
+                positions = _detail_label_geometries(widget)
+                for i in range(len(positions) - 1):
+                    assert positions[i][2] <= positions[i + 1][1]
+                for _, _, _, height, min_height in positions:
+                    assert height >= min_height
+    finally:
+        app().setStyleSheet("")
+
+
+def test_short_viewport_fix_does_not_reintroduce_the_placeholder_accumulation_bug():
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.show()
+    widget.resize(760, 640)
+    card = _make_card(0, 0.3)
+
+    try:
+        widget._clear_detail()
+        baseline = widget.detail_layout.count()
+        for _ in range(3):
+            widget._show_detail(card)
+            widget._clear_detail()
+        assert widget.detail_layout.count() == baseline
+        assert _current_layout_texts(widget.detail_layout).count(_PLACEHOLDER_TEXT) == 1
+    finally:
+        app().setStyleSheet("")
+
