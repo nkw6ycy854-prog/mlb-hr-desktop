@@ -15,6 +15,13 @@ def main()->int:
         print("PySide6 is required. Install the pinned dependencies from pyproject.toml.",file=sys.stderr);return 2
     QCoreApplication.setOrganizationName("MLBHR");QCoreApplication.setApplicationName("MLB HR")
     app=QApplication(sys.argv)
+    # The native macOS style (QMacStyle) renders QComboBox popups via the OS's
+    # own menu, which does not fully honor APP_STYLESHEET's QComboBox
+    # QAbstractItemView colors -- popups can show light/near-invisible text
+    # despite the stylesheet being correct. Fusion is Qt's own cross-platform
+    # style and fully respects QSS on every platform, keeping macOS and
+    # Windows rendering identical.
+    app.setStyle("Fusion")
     from mlb_hr.config import CONFIG
     from mlb_hr.services.bootstrap import build_services
     from mlb_hr.services.demo import DemoAnalysisService

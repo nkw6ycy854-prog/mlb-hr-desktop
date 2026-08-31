@@ -46,6 +46,31 @@ def test_history_defaults_to_jugadores_view():
     assert widget.mode_stack.currentIndex() == 0
 
 
+def test_empty_jugadores_history_shows_explanation_not_just_a_blank_table():
+    widget = _widget()  # _FakeStore returns [] for both prediction/combination rows
+
+    assert widget.players_table.rowCount() == 0
+    assert widget.empty_state_label.isHidden() is False
+    assert widget.empty_state_label.text().strip() != ""
+
+
+def test_empty_combinaciones_history_shows_explanation_not_just_a_blank_table():
+    widget = _widget()
+
+    widget.combinations_btn.click()
+
+    assert widget.combinations_table.rowCount() == 0
+    assert widget.empty_state_label.isHidden() is False
+    assert widget.empty_state_label.text().strip() != ""
+
+
+def test_empty_state_label_hides_once_jugadores_has_rows():
+    widget = HistoryWidget(_tz_store())
+
+    assert widget.players_table.rowCount() == 1
+    assert widget.empty_state_label.isHidden() is True
+
+
 def test_clicking_combinaciones_switches_stack():
     widget = _widget()
     QTest.mouseClick(widget.combinations_btn, Qt.MouseButton.LeftButton)

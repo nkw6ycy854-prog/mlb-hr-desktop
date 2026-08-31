@@ -122,6 +122,12 @@ class HistoryWidget(QWidget):
         self.metrics = QGridLayout()
         root.addLayout(self.metrics)
 
+        self.empty_state_label = QLabel("")
+        self.empty_state_label.setObjectName("muted")
+        self.empty_state_label.setWordWrap(True)
+        self.empty_state_label.setVisible(False)
+        root.addWidget(self.empty_state_label)
+
         body = QHBoxLayout()
         root.addLayout(body, 1)
 
@@ -206,6 +212,21 @@ class HistoryWidget(QWidget):
         self._render_players_table()
         self._render_combinations_table()
         self.render_hits_today()
+        self._render_empty_state()
+
+    def _render_empty_state(self) -> None:
+        # ACIERTOS HOY (mode 2) has its own empty-state message inside
+        # render_hits_today(); this only covers JUGADORES/COMBINACIONES so an
+        # empty table is never shown without an explanation.
+        mode = self.mode_stack.currentIndex()
+        if mode == 0 and not self._player_records:
+            self.empty_state_label.setText("No hay historial de jugadores para los filtros seleccionados.")
+            self.empty_state_label.setVisible(True)
+        elif mode == 1 and not self._combination_records:
+            self.empty_state_label.setText("No hay historial de combinaciones para los filtros seleccionados.")
+            self.empty_state_label.setVisible(True)
+        else:
+            self.empty_state_label.setVisible(False)
 
     def _refresh_results(self) -> None:
         self.refresh_results_btn.setEnabled(False)
