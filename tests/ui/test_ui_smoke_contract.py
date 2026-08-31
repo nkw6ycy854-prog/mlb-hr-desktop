@@ -21,9 +21,15 @@ def test_ui_smoke_script_passes_all_checks():
     payload = json.loads(result.stdout.strip().splitlines()[-1])
     for key in (
         "sidebar_navigation",
-        "today_render",
-        "history_render",
-        "settings_render",
+        "today_top15",
+        "today_by_games",
+        "canonical_time",
+        "history_players",
+        "history_combinations",
+        "history_hits_today",
+        "update_results_control",
+        "settings",
+        "functional_audit",
         "resize_large",
         "resize_compact",
         "passed",
