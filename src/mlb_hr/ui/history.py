@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QFrame, QGridLayout, QHBoxLayout,
-    QLabel, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QLabel, QPushButton, QScrollArea, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from mlb_hr.services.daily_accuracy import DailyAccuracyService
 from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.services.history import HistoryFilter, HistoryService
 from mlb_hr.ui.presentation import combination_result_label, format_local_time, player_result_label
@@ -27,10 +30,12 @@ class HistoryWidget(QWidget):
         super().__init__(parent)
         self.store = store
         self.history_service = HistoryService(store)
+        self.daily_accuracy_service = DailyAccuracyService(store)
         self.timezone_name = store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
         self._period = "ALL"
         self._player_records: list = []
         self._combination_records: list = []
+        self._daily_accuracy = None
         self._build()
         self.refresh()
 
@@ -62,7 +67,11 @@ class HistoryWidget(QWidget):
         self.combinations_btn.setObjectName("navButton")
         self.combinations_btn.setCheckable(True)
         self.combinations_btn.clicked.connect(lambda: self.set_mode(1))
-        for btn in (self.players_btn, self.combinations_btn):
+        self.hits_today_btn = QPushButton("ACIERTOS HOY")
+        self.hits_today_btn.setObjectName("navButton")
+        self.hits_today_btn.setCheckable(True)
+        self.hits_today_btn.clicked.connect(lambda: self.set_mode(2))
+        for btn in (self.players_btn, self.combinations_btn, self.hits_today_btn):
             self.mode_group.addButton(btn)
             mode_row.addWidget(btn)
         mode_row.addStretch()
@@ -118,8 +127,17 @@ class HistoryWidget(QWidget):
         self.combinations_table.cellClicked.connect(self._select_combination_row)
         self.combinations_table.horizontalHeader().setStretchLastSection(True)
 
+        self.hits_today_page = QScrollArea()
+        self.hits_today_page.setWidgetResizable(True)
+        hits_today_container = QWidget()
+        self.hits_today_layout = QVBoxLayout(hits_today_container)
+        self.hits_today_layout.setContentsMargins(0, 0, 0, 0)
+        self.hits_today_page.setWidget(hits_today_container)
+        self._hits_today_frames: list[QFrame] = []
+
         self.mode_stack.addWidget(self.players_table)
         self.mode_stack.addWidget(self.combinations_table)
+        self.mode_stack.addWidget(self.hits_today_page)
         body.addWidget(self.mode_stack, 3)
 
         self.detail = QFrame()
@@ -132,7 +150,8 @@ class HistoryWidget(QWidget):
 
     def set_mode(self, index: int) -> None:
         self.mode_stack.setCurrentIndex(index)
-        self._apply_result_labels(index)
+        if index in _RESULT_LABELS_BY_MODE:
+            self._apply_result_labels(index)
         self._clear_detail()
         self.refresh()
 
@@ -161,15 +180,17 @@ class HistoryWidget(QWidget):
         self.detail_layout.addStretch()
 
     def refresh(self) -> None:
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         self.timezone_name = self.store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
         filter_ = self.current_filter()
         self._player_records = self.history_service.player_records(filter_, now)
         self._combination_records = self.history_service.combination_records(filter_, now)
+        local_today = GameTimeService(self.timezone_name).localize(now).date()
+        self._daily_accuracy = self.daily_accuracy_service.for_date(local_today, self.timezone_name)
         self._render_metrics()
         self._render_players_table()
         self._render_combinations_table()
+        self.render_hits_today()
 
     def _render_metrics(self) -> None:
         while self.metrics.count():
@@ -177,6 +198,8 @@ class HistoryWidget(QWidget):
             w = item.widget()
             if w:
                 w.deleteLater()
+        if self.mode_stack.currentIndex() == 2:
+            return  # ACIERTOS HOY renders its own summary inside render_hits_today()
         if self.mode_stack.currentIndex() == 0:
             summary = HistoryService.summarize_players(self._player_records)
             vals = [
@@ -280,3 +303,82 @@ class HistoryWidget(QWidget):
         pl_text = f"${record.pnl:+.2f}" if record.pnl is not None else "—"
         pl = QLabel(f"P/L: {pl_text}")
         self.detail_layout.insertWidget(idx, pl)
+
+    def render_hits_today(self) -> None:
+        for frame in self._hits_today_frames:
+            frame.deleteLater()
+        while self.hits_today_layout.count():
+            item = self.hits_today_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        frames: list[QFrame] = []
+        result = self._daily_accuracy
+        if result is None:
+            self.hits_today_layout.addStretch()
+            self._hits_today_frames = frames
+            return
+
+        summary = result.summary
+        tz = GameTimeService(self.timezone_name)
+
+        header = QLabel(f"Jugadores acertados: {summary.player_hits}")
+        header.setStyleSheet("font-size:16px;font-weight:700")
+        self.hits_today_layout.addWidget(header)
+        combo_header = QLabel(f"Combinaciones ganadas: {summary.combo_wins}")
+        combo_header.setStyleSheet("font-size:16px;font-weight:700")
+        self.hits_today_layout.addWidget(combo_header)
+
+        hit_players = [p for p in result.players if p.result == "HR"]
+        won_combos = [c for c in result.combinations if c.result == "HR"]
+
+        if not hit_players and not won_combos:
+            empty = QLabel("Todavía no hay predicciones acertadas para esta fecha.")
+            empty.setObjectName("muted")
+            self.hits_today_layout.addWidget(empty)
+        else:
+            if hit_players:
+                section = QLabel("JUGADORES")
+                section.setStyleSheet("font-weight:700;margin-top:8px;")
+                self.hits_today_layout.addWidget(section)
+            for player in hit_players:
+                frame = QFrame()
+                frame.setObjectName("card")
+                lay = QVBoxLayout(frame)
+                time_text = tz.format_time(player.game_time_utc)
+                odds_text = f"{int(player.odds_at_prediction):+d}" if player.odds_at_prediction is not None else "—"
+                lay.addWidget(QLabel(f"{player.player_name} — {player.team_name} vs {player.opponent_name} · {time_text}"))
+                lay.addWidget(QLabel(f"{player.probability*100:.1f}% · {player.classification} · Cuota {odds_text}"))
+                status_label = QLabel("✅ ACERTADO / HR")
+                status_label.setObjectName("good")
+                lay.addWidget(status_label)
+                frames.append(frame)
+                self.hits_today_layout.addWidget(frame)
+
+            if won_combos:
+                section = QLabel("COMBINACIONES")
+                section.setStyleSheet("font-weight:700;margin-top:8px;")
+                self.hits_today_layout.addWidget(section)
+            for combo in won_combos:
+                frame = QFrame()
+                frame.setObjectName("card")
+                lay = QVBoxLayout(frame)
+                lay.addWidget(QLabel(f"{combo.kind} · {combo.filter_status}"))
+                for leg in combo.legs:
+                    leg_time = tz.format_time(leg.game_time)
+                    lay.addWidget(QLabel(f"  {leg.player_name} · {leg_time}"))
+                odds_text = f"{combo.odds:.2f}" if combo.odds else "—"
+                pl_text = f"${combo.pnl:+.2f}" if combo.pnl is not None else "—"
+                status_label = QLabel(f"✅ {combination_result_label(combo.result)} · Cuota {odds_text} · P/L {pl_text}")
+                status_label.setObjectName("good")
+                lay.addWidget(status_label)
+                frames.append(frame)
+                self.hits_today_layout.addWidget(frame)
+
+        if summary.player_pending or summary.combo_pending:
+            pending = QLabel(f"Pendientes: {summary.player_pending} jugador(es), {summary.combo_pending} combinación(es).")
+            pending.setObjectName("muted")
+            self.hits_today_layout.addWidget(pending)
+
+        self.hits_today_layout.addStretch()
+        self._hits_today_frames = frames

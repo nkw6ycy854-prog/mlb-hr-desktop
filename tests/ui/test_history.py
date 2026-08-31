@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from mlb_hr.services.history import HistoryFilter
 from mlb_hr.ui.history import HistoryWidget
@@ -205,3 +205,101 @@ def test_history_refresh_picks_up_a_persisted_timezone_change():
     widget.refresh()
 
     assert widget.players_table.item(0, 1).text() == "11:05 PM"
+
+
+def _hits_today_texts(widget) -> str:
+    labels = [label.text() for label in widget.hits_today_page.findChildren(QLabel)]
+    buttons = [button.text() for button in widget.hits_today_page.findChildren(QPushButton)]
+    return "\n".join(labels + buttons)
+
+
+def _hits_today_store():
+    now = datetime.now(timezone.utc)
+    game_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    created_at = now - timedelta(hours=2)
+
+    player_rows = [
+        {
+            "prediction_id": "hit1", "player_name": "Aaron Judge",
+            "game_time": game_time.isoformat(), "created_at": created_at.isoformat(),
+            "classification": "PRIMARY", "final_probability": 0.20,
+            "reference_stake": 10.0, "odds_at_prediction": 150,
+            "actual_hr_binary": 1, "pnl_amount": 25.0,
+            "game_pk": 1, "team_name": "Yankees", "opponent_name": "Red Sox",
+        },
+        {
+            "prediction_id": "hit2", "player_name": "Juan Soto",
+            "game_time": game_time.isoformat(), "created_at": created_at.isoformat(),
+            "classification": "SECONDARY", "final_probability": 0.15,
+            "reference_stake": 10.0, "odds_at_prediction": 130,
+            "actual_hr_binary": 1, "pnl_amount": 18.0,
+            "game_pk": 2, "team_name": "Mets", "opponent_name": "Braves",
+        },
+        {
+            "prediction_id": "miss1", "player_name": "Player Miss",
+            "game_time": game_time.isoformat(), "created_at": created_at.isoformat(),
+            "classification": "WATCH", "final_probability": 0.08,
+            "reference_stake": 10.0, "odds_at_prediction": 200,
+            "actual_hr_binary": 0, "pnl_amount": -10.0,
+            "game_pk": 3, "team_name": "Cubs", "opponent_name": "Reds",
+        },
+    ]
+    legs = [{"prediction_id": "combo_leg1", "player_id": 9, "player_name": "Combo Player", "probability": 0.12, "classification": "PRIMARY", "game_pk": 4}]
+    combo_rows = [{
+        "combination_id": "combo1", "kind": "BEST_2_MAN", "created_at": created_at.isoformat(),
+        "legs_json": json.dumps(legs), "filter_status": "QUALIFIED",
+        "won": 1, "profit_loss": 30.0, "estimated_decimal_odds": 3.2,
+    }]
+    prediction_rows = {"combo_leg1": {"game_time": game_time.isoformat()}}
+
+    class _Store:
+        def history_prediction_rows(self, limit=2000):
+            return list(player_rows)
+
+        def history_combination_rows(self, limit=1000):
+            return list(combo_rows)
+
+        def prediction_rows_by_ids(self, ids):
+            return {k: v for k, v in prediction_rows.items() if k in ids}
+
+        def leg_settlements(self, ids):
+            return {}
+
+        def get_state(self, key, default=None):
+            return "America/Santo_Domingo" if key == "timezone_name" else default
+
+    return _Store()
+
+
+def test_clicking_aciertos_hoy_switches_to_third_stack_page():
+    app()
+    widget = HistoryWidget(_FakeStore())
+
+    widget.hits_today_btn.click()
+
+    assert widget.mode_stack.currentIndex() == 2
+
+
+def test_aciertos_hoy_shows_exact_hit_counts_and_names():
+    app()
+    widget = HistoryWidget(_hits_today_store())
+
+    widget.hits_today_btn.click()
+    texts = _hits_today_texts(widget)
+
+    assert "Jugadores acertados: 2" in texts
+    assert "Combinaciones ganadas: 1" in texts
+    assert "Aaron Judge" in texts
+    assert "Juan Soto" in texts
+    assert "Player Miss" not in texts  # did not hit -- must not appear as a hit
+    assert "Combo Player" in texts
+
+
+def test_aciertos_hoy_empty_state_message():
+    app()
+    widget = HistoryWidget(_FakeStore())
+
+    widget.hits_today_btn.click()
+    texts = _hits_today_texts(widget)
+
+    assert "Todavía no hay predicciones acertadas para esta fecha." in texts
