@@ -36,6 +36,10 @@ def _widget(store=None) -> SettingsWidget:
     return SettingsWidget(store or _FakeStore())
 
 
+def _widget_texts(widget) -> str:
+    return "\n".join(label.text() for label in widget.findChildren(QLabel))
+
+
 def test_settings_has_four_section_titles():
     widget = _widget()
     texts = {label.text() for label in widget.findChildren(QLabel)}
@@ -49,13 +53,33 @@ def test_saving_general_section_persists_and_gives_feedback():
 
     widget.stake.setCurrentText("$25")
     widget.timezone.setCurrentText("America/Santo_Domingo")
-    widget.density.setCurrentText("Compacta")
     widget.save()
 
     assert store.get_state("default_stake") == 25.0
     assert store.get_state("timezone_name") == "America/Santo_Domingo"
-    assert store.get_state("ui_density") == "compact"
     assert "Guardado" in widget.feedback.text()
+
+
+def test_density_control_was_removed_it_never_affected_anything():
+    # ui_density was persisted and shown as "changed" on save, but nothing in
+    # src/ ever read it back -- a purely cosmetic control per the audit's own
+    # rule (functional or removed). Confirms it's gone, not just hidden.
+    widget = _widget()
+    assert not hasattr(widget, "density")
+    assert "Densidad" not in _widget_texts(widget)
+
+
+def test_changing_stake_tells_the_user_a_restart_is_needed():
+    # AnalysisService.stake is fixed at construction (build_services() reads
+    # default_stake once); a change here only affects the NEXT app launch, so
+    # the feedback must say so, matching how AI/API key changes already do.
+    store = _FakeStore()
+    widget = _widget(store)
+
+    widget.stake.setCurrentText("$25")
+    widget.save()
+
+    assert "reinicia" in widget.feedback.text().lower()
 
 
 def test_current_timezone_value_remains_selectable():

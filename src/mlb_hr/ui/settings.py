@@ -20,7 +20,6 @@ from mlb_hr.ui.workers import FunctionWorker
 STAKE_OPTIONS = ["$5", "$10", "$20", "$25", "$50"]
 CUSTOM_STAKE_LABEL = "Personalizada…"
 _PREDEFINED_STAKE_VALUES = {5.0: "$5", 10.0: "$10", 20.0: "$20", 25.0: "$25", 50.0: "$50"}
-DENSITY_OPTIONS = [("Cómoda", "comfortable"), ("Compacta", "compact")]
 AI_PROVIDER_OPTIONS = [
     ("Ninguno", "none"), ("Groq", "groq"), ("Gemini", "gemini"),
     ("OpenRouter", "openrouter"), ("Ollama local", "ollama"),
@@ -143,15 +142,6 @@ class SettingsWidget(QWidget):
             self.timezone.setCurrentText(current_tz)
         form.addRow("Zona horaria", self.timezone)
 
-        self.density = QComboBox()
-        for label, _code in DENSITY_OPTIONS:
-            self.density.addItem(label)
-        current_density = str(self.store.get_state("ui_density", "comfortable") or "comfortable")
-        for label, code in DENSITY_OPTIONS:
-            if code == current_density:
-                self.density.setCurrentText(label)
-        form.addRow("Densidad de interfaz", self.density)
-
     def _build_odds(self, root: QVBoxLayout) -> None:
         form = _section("CUOTAS", root)
         self.odds_key = QLineEdit()
@@ -255,18 +245,16 @@ class SettingsWidget(QWidget):
             stake_value = float(self.stake.currentText().replace("$", ""))
         if stake_value != float(self.store.get_state("default_stake", 10.0)):
             changed.append("Apuesta base")
+            # AnalysisService.stake is fixed at construction (build_services()
+            # reads default_stake once at startup); a change here only takes
+            # effect for predictions made after the app is relaunched.
+            restart_needed = True
         self.store.set_state("default_stake", stake_value)
 
         tz_value = self.timezone.currentText()
         if tz_value != str(self.store.get_state("timezone_name", "") or ""):
             changed.append("Zona horaria")
         self.store.set_state("timezone_name", tz_value)
-
-        density_label = self.density.currentText()
-        density_code = next((code for label, code in DENSITY_OPTIONS if label == density_label), "comfortable")
-        if density_code != str(self.store.get_state("ui_density", "comfortable") or "comfortable"):
-            changed.append("Densidad de interfaz")
-        self.store.set_state("ui_density", density_code)
 
         provider_label = self.ai_provider.currentText()
         provider_code = next((code for label, code in AI_PROVIDER_OPTIONS if label == provider_label), "none")
