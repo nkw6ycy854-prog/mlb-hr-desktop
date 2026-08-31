@@ -29,6 +29,7 @@ from mlb_hr.domain.models import (
     TeamLineup,
     VenueRef,
 )
+from mlb_hr.ui.style import APP_STYLESHEET
 from mlb_hr.ui.today import TodayWidget
 
 
@@ -319,6 +320,49 @@ def test_top15_and_por_partidos_switch_toggles_view_stack():
     assert widget.view_stack.currentIndex() == 0
 
 
+def test_top15_nav_button_is_active_by_default():
+    app()
+    widget = TodayWidget(_make_service(), None)
+
+    assert widget.top15_btn.isChecked() is True
+    assert widget.by_games_btn.isChecked() is False
+
+
+def test_por_partidos_nav_button_becomes_active_after_click():
+    app()
+    widget = TodayWidget(_make_service(), None)
+
+    widget.by_games_btn.click()
+
+    assert widget.by_games_btn.isChecked() is True
+    assert widget.top15_btn.isChecked() is False
+
+
+def test_only_one_nav_button_active_after_toggling_back_and_forth():
+    app()
+    widget = TodayWidget(_make_service(), None)
+
+    widget.by_games_btn.click()
+    widget.top15_btn.click()
+
+    assert widget.top15_btn.isChecked() is True
+    assert widget.by_games_btn.isChecked() is False
+
+
+def test_nav_buttons_use_the_existing_navbutton_checkable_pattern():
+    # Same pattern already used by HistoryWidget's JUGADORES/COMBINACIONES
+    # tabs (QPushButton#navButton, checkable, in an exclusive QButtonGroup)
+    # rather than an improvised inline style.
+    app()
+    widget = TodayWidget(_make_service(), None)
+
+    assert widget.top15_btn.objectName() == "navButton"
+    assert widget.by_games_btn.objectName() == "navButton"
+    assert widget.top15_btn.isCheckable() is True
+    assert widget.by_games_btn.isCheckable() is True
+    assert widget.nav_group.exclusive() is True
+
+
 def test_por_partidos_shows_both_teams_all_lineup_players_hr_descending_and_canonical_time():
     app()
     widget = TodayWidget(_make_service(), None)
@@ -345,6 +389,53 @@ def test_por_partidos_shows_both_teams_all_lineup_players_hr_descending_and_cano
     assert "Home Player" in texts
     assert "Team A" in texts and "Team B" in texts
     assert "7:15 PM" in texts
+
+
+def test_por_partidos_does_not_force_a_width_wider_than_a_compact_viewport():
+    # Reproduces the exact reported regression: after a player is auto-selected
+    # on load (real usage -- _render_table() always selects row 0), TOP 15's
+    # detail panel content used to inflate view_stack's shared minimum width,
+    # forcing POR PARTIDOS's own container wider than a compact window can
+    # actually provide. 620 mirrors a ~760px real window once the 200px fixed
+    # sidebar (present in MainWindow, absent here) is accounted for.
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.resize(1400, 900)
+    widget.show()
+    cards = [_make_card(i, 1 - i / 100) for i in range(5)]
+    result = SlateResult(
+        cards=cards, combinations=[], slate_quality=SlateQuality.GREEN, model_health=ModelHealth.GREEN,
+        confirmed_lineups=1, total_games=1, updated_at=datetime.now(timezone.utc),
+    )
+    widget._loaded(result)  # auto-selects row 0 -> populates the TOP 15 detail panel
+
+    widget.by_games_btn.click()
+    widget.resize(620, 640)
+
+    try:
+        assert widget.width() <= 640
+        assert widget.games_page.width() <= widget.width()
+    finally:
+        app().setStyleSheet("")
+
+
+def test_por_partidos_still_fills_a_wide_viewport_after_the_fix():
+    app().setStyleSheet(APP_STYLESHEET)
+    widget = TodayWidget(_make_service(), None)
+    widget.resize(1400, 900)
+    widget.show()
+    cards = [_make_card(i, 1 - i / 100) for i in range(5)]
+    result = SlateResult(
+        cards=cards, combinations=[], slate_quality=SlateQuality.GREEN, model_health=ModelHealth.GREEN,
+        confirmed_lineups=1, total_games=1, updated_at=datetime.now(timezone.utc),
+    )
+    widget._loaded(result)
+    widget.by_games_btn.click()
+
+    try:
+        assert widget.games_page.width() > 900
+    finally:
+        app().setStyleSheet("")
 
 
 def test_por_partidos_distinguishes_pending_lineup_live_and_final_empty_states():
@@ -398,4 +489,75 @@ def test_detail_panel_avoids_duplicate_fanduel_line_when_best():
 
     assert texts.count("FanDuel") == 1
     assert "FanDuel +430 · MEJOR CUOTA" in texts
+
+
+_PLACEHOLDER_TEXT = "Selecciona un jugador para ver el motivo y el riesgo principal."
+
+
+def _current_layout_texts(layout) -> list[str]:
+    # Reads only what the layout currently holds, unlike QWidget.findChildren()
+    # which can still see widgets scheduled for deleteLater() but not yet
+    # destroyed (deferred deletion needs a running Qt event loop to complete,
+    # which a synchronous test never runs) -- this is the deterministic way to
+    # assert "no accumulation" regardless of GC timing.
+    texts = []
+    for i in range(layout.count()):
+        w = layout.itemAt(i).widget()
+        if isinstance(w, QLabel):
+            texts.append(w.text())
+    return texts
+
+
+def test_selecting_a_player_shows_only_that_players_detail():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    card_a = _make_card(0, 0.3)
+
+    widget._show_detail(card_a)
+    texts = _current_layout_texts(widget.detail_layout)
+
+    assert any("Player 0" in t for t in texts)
+    assert _PLACEHOLDER_TEXT not in texts
+
+
+def test_selecting_player_b_fully_replaces_player_a_detail():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    card_a = _make_card(0, 0.3)
+    card_b = _make_card(1, 0.2)
+
+    widget._show_detail(card_a)
+    widget._show_detail(card_b)
+    texts = _current_layout_texts(widget.detail_layout)
+
+    assert any("Player 1" in t for t in texts)
+    assert not any("Player 0" in t for t in texts)
+    assert _PLACEHOLDER_TEXT not in texts
+
+
+def test_clearing_detail_shows_exactly_one_placeholder():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    widget._show_detail(_make_card(0, 0.3))
+
+    widget._clear_detail()
+    texts = _current_layout_texts(widget.detail_layout)
+
+    assert texts.count(_PLACEHOLDER_TEXT) == 1
+
+
+def test_repeated_selection_and_clearing_does_not_accumulate_widgets():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    card = _make_card(0, 0.3)
+
+    widget._clear_detail()
+    baseline = widget.detail_layout.count()
+
+    for _ in range(5):
+        widget._show_detail(card)
+        widget._clear_detail()
+
+    assert widget.detail_layout.count() == baseline
+    assert _current_layout_texts(widget.detail_layout).count(_PLACEHOLDER_TEXT) == 1
 

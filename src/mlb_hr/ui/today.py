@@ -5,7 +5,7 @@ from datetime import timezone
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView,QFrame,QHBoxLayout,QLabel,QMessageBox,QPushButton,
+    QAbstractItemView,QButtonGroup,QFrame,QHBoxLayout,QLabel,QMessageBox,QPushButton,
     QScrollArea,QSizePolicy,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
@@ -32,7 +32,10 @@ class TodayWidget(QWidget):
         self.refresh_btn=QPushButton("ACTUALIZAR");self.refresh_btn.setObjectName("primaryButton");self.refresh_btn.clicked.connect(self.refresh);top.addWidget(self.refresh_btn)
         root.addLayout(top)
         meta=QHBoxLayout();self.model_status=QLabel("● Modelo —");self.data_status=QLabel("● Datos —");self.lineups=QLabel("0 juegos pregame");self.updated=QLabel("Sin actualizar")
-        for x in (self.model_status,self.data_status,self.lineups,self.updated):meta.addWidget(x)
+        # This row sits directly in root (not inside any scroll area), so its
+        # natural unwrapped width is TodayWidget's actual floor -- word-wrap lets
+        # it shrink on a compact window instead of forcing the whole widget wide.
+        for x in (self.model_status,self.data_status,self.lineups,self.updated):x.setWordWrap(True);meta.addWidget(x)
         meta.addStretch()
         root.addLayout(meta)
         self.banner=QLabel("");self.banner.setWordWrap(True);self.banner.hide();root.addWidget(self.banner)
@@ -48,8 +51,10 @@ class TodayWidget(QWidget):
         root.addWidget(self.health_failure_frame)
 
         self.nav_row_widget=QWidget();nav_row=QHBoxLayout(self.nav_row_widget);nav_row.setContentsMargins(0,0,0,0)
-        self.top15_btn=QPushButton("TOP 15");self.top15_btn.setObjectName("primaryButton");self.top15_btn.clicked.connect(lambda:self.view_stack.setCurrentIndex(0));nav_row.addWidget(self.top15_btn)
-        self.by_games_btn=QPushButton("POR PARTIDOS");self.by_games_btn.clicked.connect(lambda:self.view_stack.setCurrentIndex(1));nav_row.addWidget(self.by_games_btn)
+        self.nav_group=QButtonGroup(self);self.nav_group.setExclusive(True)
+        self.top15_btn=QPushButton("TOP 15");self.top15_btn.setObjectName("navButton");self.top15_btn.setCheckable(True);self.top15_btn.setChecked(True);self.top15_btn.clicked.connect(lambda:self.view_stack.setCurrentIndex(0));nav_row.addWidget(self.top15_btn)
+        self.by_games_btn=QPushButton("POR PARTIDOS");self.by_games_btn.setObjectName("navButton");self.by_games_btn.setCheckable(True);self.by_games_btn.clicked.connect(lambda:self.view_stack.setCurrentIndex(1));nav_row.addWidget(self.by_games_btn)
+        for btn in (self.top15_btn,self.by_games_btn):self.nav_group.addButton(btn)
         nav_row.addStretch()
         root.addWidget(self.nav_row_widget)
 
@@ -67,7 +72,17 @@ class TodayWidget(QWidget):
         self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);top15_layout.addWidget(self.main_pair,1)
         self.combo_section_label=QLabel("COMBINACIONES");self.combo_section_label.setObjectName("section");top15_layout.addWidget(self.combo_section_label)
         self.combo_grid=ResponsiveGrid(two_column_min_width=760);self._combo_frames:list[QFrame]=[];top15_layout.addWidget(self.combo_grid)
-        self.view_stack.addWidget(top15_page)
+        # QStackedWidget sizes itself to fit the largest minimum-size demand among
+        # ALL of its pages, not just the current one -- without this wrapper, once
+        # the detail panel is populated with real content, its natural (unwrapped)
+        # width leaks into view_stack's shared floor and prevents POR PARTIDOS from
+        # shrinking on a compact window even though its own content needs far less
+        # space. Wrapping each page in its own QScrollArea (same pattern already
+        # used for games_page below, and for every top-level page via
+        # components.make_scroll_page) isolates that floor per page.
+        top15_scroll=QScrollArea();top15_scroll.setWidgetResizable(True);top15_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        top15_scroll.setWidget(top15_page)
+        self.view_stack.addWidget(top15_scroll)
 
         self.games_page=QScrollArea();self.games_page.setWidgetResizable(True)
         games_container=QWidget();self.games_layout=QVBoxLayout(games_container);self.games_layout.setContentsMargins(0,0,0,0);self.games_layout.addStretch()
@@ -149,14 +164,17 @@ class TodayWidget(QWidget):
         cards=self._cards
         if 0<=row<len(cards):self._show_detail(cards[row])
 
-    def _clear_detail(self)->None:
+    def _wipe_detail(self)->None:
         while self.detail_layout.count():
             item=self.detail_layout.takeAt(0);w=item.widget();
             if w:w.deleteLater()
+
+    def _clear_detail(self)->None:
+        self._wipe_detail()
         self.detail_layout.addWidget(QLabel("Selecciona un jugador para ver el motivo y el riesgo principal."));self.detail_layout.addStretch()
 
     def _show_detail(self,card:PredictionCard)->None:
-        self._clear_detail();p=card.prediction;m=card.market
+        self._wipe_detail();p=card.prediction;m=card.market
         title=QLabel(p.player.full_name);title.setObjectName("section");self.detail_layout.addWidget(title)
         time_text=self._time_service().format_time(p.game_time)
         game=QLabel(f"{p.team_name} vs {p.opponent_name} · {time_text}");game.setObjectName("muted");self.detail_layout.addWidget(game)
