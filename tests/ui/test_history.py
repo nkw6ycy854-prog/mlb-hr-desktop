@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import json
 
 from PySide6.QtCore import QThreadPool, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
+from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.services.history import HistoryFilter
 from mlb_hr.services.settlement_coordinator import SettlementRunResult
 from mlb_hr.ui.history import HistoryWidget
@@ -245,9 +247,15 @@ def _hits_today_texts(widget) -> str:
 
 
 def _hits_today_store():
-    now = datetime.now(timezone.utc)
-    game_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-    created_at = now - timedelta(hours=2)
+    # Anchored to local noon (not a `datetime.now()`-relative offset) so the
+    # fixture's calendar day always matches HistoryWidget.refresh()'s own
+    # `now()`-derived local_date, regardless of what wall-clock hour the
+    # test happens to run at (near the UTC/local day boundary, an offset
+    # anchor could round game_time into a different local calendar day).
+    zone = ZoneInfo("America/Santo_Domingo")
+    local_today = GameTimeService("America/Santo_Domingo").localize(datetime.now(timezone.utc)).date()
+    game_time = datetime.combine(local_today, datetime.min.time().replace(hour=12), tzinfo=zone).astimezone(timezone.utc)
+    created_at = game_time - timedelta(hours=2)
 
     player_rows = [
         {
