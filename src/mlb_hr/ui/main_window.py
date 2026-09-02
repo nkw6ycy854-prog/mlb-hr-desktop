@@ -39,6 +39,8 @@ class MainWindow(QMainWindow):
         self.today = TodayWidget(analysis_service, store)
         self.games_page = GamesPageWidget(store)
         self.combinations_page = CombinationsPageWidget(analysis_service)
+        self.games_page.refresh_callback = self.today.refresh
+        self.combinations_page.refresh_callback = self.today.refresh
         self.today.on_loaded = self._on_today_loaded
         self.history = HistoryWidget(store)
         self.settings = SettingsWidget(store, paths=paths)

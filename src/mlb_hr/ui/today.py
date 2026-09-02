@@ -121,6 +121,11 @@ class TodayWidget(QWidget):
         root.addWidget(self.top15_scroll,1)
 
     def refresh(self)->None:
+        # Reentrancy guard: ACTUALIZAR is now reachable from POR PARTIDOS and
+        # COMBINACIONES too (each call this same method), so this must be
+        # the single place that refuses a second concurrent refresh no
+        # matter which page's button triggered it.
+        if not self.refresh_btn.isEnabled():return
         self.refresh_btn.setEnabled(False);self.status.setText("Verificando lineups · SP · clima · modelo…")
         worker=FunctionWorker(self.service.analyze_slate);worker.signals.finished.connect(self._loaded);worker.signals.error.connect(self._error);self.thread_pool.start(worker)
 

@@ -119,8 +119,18 @@ class GamesPageWidget(QScrollArea):
         self._current: SlateResult | None = None
         self._cards: list[GameCard] = []
 
+        self.refresh_callback = None
+
         container = QWidget()
         self._layout = QVBoxLayout(container)
+
+        top = QHBoxLayout()
+        self.refresh_btn = QPushButton("ACTUALIZAR")
+        self.refresh_btn.setObjectName("primaryButton")
+        self.refresh_btn.clicked.connect(self._trigger_refresh)
+        top.addStretch()
+        top.addWidget(self.refresh_btn)
+        self._layout.addLayout(top)
 
         controls = QHBoxLayout()
         self.expand_recommended_btn = QPushButton("EXPANDIR RECOMENDADOS")
@@ -151,7 +161,15 @@ class GamesPageWidget(QScrollArea):
         name = self.store.get_state("timezone_name", None) if self.store else None
         return GameTimeService(name or GameTimeService.DEFAULT_TIMEZONE)
 
+    def _trigger_refresh(self) -> None:
+        if self.refresh_callback:
+            self.refresh_btn.setEnabled(False)
+            self.refresh_callback()
+
     def render(self, result: SlateResult) -> None:
+        # The refresh (if this page triggered it) is complete once a fresh
+        # SlateResult arrives here -- re-enable, no separate "done" signal needed.
+        self.refresh_btn.setEnabled(True)
         self._current = result
         for card in self._cards:
             card.deleteLater()

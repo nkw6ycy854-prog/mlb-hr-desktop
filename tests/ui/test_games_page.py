@@ -192,3 +192,25 @@ def test_clicking_a_player_opens_the_shared_detail_panel():
 
     assert widget.detail_panel.isHidden() is False
     assert "A" in widget.detail_panel.title_label.text()
+
+
+def test_actualizar_button_calls_refresh_callback_and_disables_itself():
+    app()
+    widget = GamesPageWidget(None)
+    calls = []
+    widget.refresh_callback = lambda: calls.append(1)
+
+    widget.refresh_btn.click()
+
+    assert calls == [1]
+    assert widget.refresh_btn.isEnabled() is False
+
+
+def test_rendering_a_new_slate_re_enables_the_actualizar_button():
+    app()
+    widget = GamesPageWidget(None)
+    widget.refresh_btn.setEnabled(False)
+
+    widget.render(_slate([], []))
+
+    assert widget.refresh_btn.isEnabled() is True

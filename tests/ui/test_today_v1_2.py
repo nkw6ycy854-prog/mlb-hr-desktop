@@ -2,6 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -231,3 +232,18 @@ def test_loading_a_slate_persists_mlb_feed_status_for_status_center(tmp_path):
     status = store.get_state("last_mlb_feed_status")
     assert status is not None
     assert status["quality"] == "GREEN"
+
+
+def test_refresh_is_a_no_op_while_a_refresh_is_already_in_flight():
+    # No permitir dos refresh simultaneos, regardless of which page's
+    # ACTUALIZAR button triggered the first one.
+    app()
+    calls = []
+    service = SimpleNamespace(analyze_slate=lambda: calls.append(1))
+    widget = TodayWidget(service, None)
+    widget.refresh_btn.setEnabled(False)  # simulate an in-flight refresh
+
+    widget.refresh()
+
+    assert calls == []
+

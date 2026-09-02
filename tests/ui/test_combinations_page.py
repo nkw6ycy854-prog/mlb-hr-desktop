@@ -153,3 +153,25 @@ def test_volver_a_combinacion_restores_the_combo_view():
 
     body_texts = "\n".join(l.text() for l in widget.detail_panel.findChildren(QLabel))
     assert "A" in body_texts and "B" in body_texts
+
+
+def test_actualizar_button_calls_refresh_callback_and_disables_itself():
+    app()
+    widget = CombinationsPageWidget(object())
+    calls = []
+    widget.refresh_callback = lambda: calls.append(1)
+
+    widget.refresh_btn.click()
+
+    assert calls == [1]
+    assert widget.refresh_btn.isEnabled() is False
+
+
+def test_rendering_a_new_slate_re_enables_the_actualizar_button():
+    app()
+    widget = CombinationsPageWidget(object())
+    widget.refresh_btn.setEnabled(False)
+
+    widget.render(_slate([], []))
+
+    assert widget.refresh_btn.isEnabled() is True

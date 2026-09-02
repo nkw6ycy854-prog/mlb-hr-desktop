@@ -70,9 +70,18 @@ class CombinationsPageWidget(QScrollArea):
         self._current: SlateResult | None = None
         self._cards_by_kind: dict[str, CombinationCard] = {}
         self._cards_by_prediction_id: dict[str, object] = {}
+        self.refresh_callback = None
 
         container = QWidget()
         self._layout = QVBoxLayout(container)
+
+        top = QHBoxLayout()
+        self.refresh_btn = QPushButton("ACTUALIZAR")
+        self.refresh_btn.setObjectName("primaryButton")
+        self.refresh_btn.clicked.connect(self._trigger_refresh)
+        top.addStretch()
+        top.addWidget(self.refresh_btn)
+        self._layout.addLayout(top)
 
         self.grid = ResponsiveGrid(two_column_min_width=760)
         self._layout.addWidget(self.grid)
@@ -83,7 +92,13 @@ class CombinationsPageWidget(QScrollArea):
         self._layout.addStretch()
         self.setWidget(container)
 
+    def _trigger_refresh(self) -> None:
+        if self.refresh_callback:
+            self.refresh_btn.setEnabled(False)
+            self.refresh_callback()
+
     def render(self, result: SlateResult) -> None:
+        self.refresh_btn.setEnabled(True)
         self._current = result
         self._cards_by_prediction_id = {c.prediction.prediction_id: c for c in result.cards}
         combos = {c.kind: c for c in result.combinations}
