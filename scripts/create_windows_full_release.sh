@@ -127,6 +127,31 @@ if [[ -f "$TMP/download/windows.json" ]]; then
   cp "$TMP/download/windows.json" "$TMP/windows-native-smoke.json"
 fi
 
+# Hard precondition: this local step assembles the FULL package on macOS,
+# which cannot execute app.exe -- so it can never itself prove the real
+# Windows binary discovers its bundled data autonomously. That proof can
+# only come from the CI gate, which already ran the actual app.exe on a
+# real Windows runner for this exact release_commit. Require it explicitly
+# rather than silently trusting a weak local self-test (the real root cause
+# of the shipped bug: the old local self-test used the macOS *source* tree
+# with an MLB_HR_DATA_DIR override, which never tested the Windows exe's
+# own default resolution at all).
+WINDOWS_JSON="$TMP/download/windows.json"
+[[ -f "$WINDOWS_JSON" ]] || {
+  echo "ERROR: no se encontro windows.json en el artifact de CI -- no se puede verificar que el app.exe real de este run confirmo statcast_runtime_available sin apoyo de MLB_HR_DATA_DIR."
+  exit 1
+}
+CI_STATCAST_OK=$(PYTHONPATH="$ROOT/src" python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+print('true' if d.get('checks', {}).get('statcast_runtime_available') else 'false')
+" "$WINDOWS_JSON")
+if [[ "$CI_STATCAST_OK" != "true" ]]; then
+  echo "ERROR: el Windows Native Gate (CI) no confirmo statcast_runtime_available=true para el app.exe real de este release_commit. No se puede declarar release-ready -- revisa el run $RUN_ID."
+  exit 1
+fi
+echo "Verificado: el gate de CI ya confirmo (con el app.exe real, sin MLB_HR_DATA_DIR) que la app descubre runtime_data/statcast de forma autonoma para release_commit=$RELEASE_COMMIT."
+
 cat > "$TMP/full/RELEASE-INFO.txt" <<EOF
 MLB HR Windows portable V$APP_VERSION
 Predictive model: $MODEL_VERSION
@@ -143,9 +168,36 @@ estructurado firmado por el self-test --require-runtime-data.
 EOF
 
 echo
-echo "Ensamblando paquete FULL con Statcast real y verificando self-test..."
+echo "Ensamblando paquete FULL con Statcast real..."
 mkdir -p "$OUT_DIR"
 rm -f "$OUT"
+
+# Local self-test-cmd is deliberately NOT a claim of OS-level runtime proof
+# (that proof is the hard precondition above, from the real app.exe on real
+# Windows CI). It only verifies this local copy of the real Statcast files
+# actually landed correctly and are non-empty -- an honest, narrowly-scoped
+# check, never routed through resolve_app_paths()/MLB_HR_DATA_DIR, which
+# would be meaningless for a Windows binary when run from macOS.
+LOCAL_COPY_CHECK="$TMP/local_copy_check.py"
+cat > "$LOCAL_COPY_CHECK" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+bundle_dir = Path.cwd()
+files = list(bundle_dir.glob("runtime_data/statcast/season=*/month=*/statcast_*.parquet"))
+ok = len(files) > 0 and all(f.stat().st_size > 0 for f in files)
+print(json.dumps({
+    "passed": ok,
+    "checks": {"statcast_runtime_available": ok},
+    "details": {
+        "local_parquet_count": len(files),
+        "note": "Local file-copy integrity check only. Runtime discoverability on "
+                "real Windows for this exact release_commit was already verified by "
+                "the CI gate's own app.exe self-test (see the hard precondition "
+                "above), not re-derived here.",
+    },
+}))
+PYEOF
 
 PYTHONPATH="$ROOT/src" python3 "$ROOT/scripts/windows_full_package.py" build \
   --bundle-dir "$TMP/full" \
@@ -156,7 +208,7 @@ PYTHONPATH="$ROOT/src" python3 "$ROOT/scripts/windows_full_package.py" build \
   --model-version "$MODEL_VERSION" \
   --model-hash "$MODEL_HASH" \
   --release-commit "$RELEASE_COMMIT" \
-  --self-test-cmd '["python3", "-m", "mlb_hr.selftest", "--require-runtime-data"]'
+  --self-test-cmd "[\"python3\", \"$LOCAL_COPY_CHECK\"]"
 
 echo
 echo "Validando el ZIP FULL generado (byte a byte, no solo el script)..."

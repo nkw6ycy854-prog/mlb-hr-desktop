@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 import platform
+import sys
 
 
 APP_DIR_NAME = "MLB HR"
@@ -83,6 +84,31 @@ def _legacy_statcast_dirs() -> list[Path]:
     return [xdg_data / "statcast", xdg_data / "MLBHR" / "statcast"]
 
 
+def _frozen_windows_bundled_statcast_dir() -> Path | None:
+    """The Windows FULL release ships real Statcast parquet at
+    <bundle_dir>/runtime_data/statcast, right next to app.exe (see
+    scripts/windows_full_package.py). resolve_app_paths() previously never
+    looked there -- only at %LOCALAPPDATA%\\MLB HR\\statcast -- so the
+    distributed app.exe, run normally with no MLB_HR_DATA_DIR set, could
+    never find its own bundled data (real bug, shipped in v1.2.0's Windows
+    FULL asset; the release gate's self-test only passed because it
+    injected MLB_HR_DATA_DIR as an override, which a real user never sets).
+
+    Auto-discovers that location with zero environment variables and
+    without ever copying the parquet files anywhere -- reads them in
+    place. Only fires for a genuinely frozen Windows build (sys.frozen is
+    set by both PyInstaller and Nuitka's standalone/onefile modes, which
+    is what pyside6-deploy uses) with real data actually present; never on
+    a source-mode run, never on another platform, never fabricated.
+    """
+    if platform.system() != "Windows":
+        return None
+    if not getattr(sys, "frozen", False):
+        return None
+    candidate = Path(sys.executable).parent / "runtime_data" / "statcast"
+    return candidate if _has_statcast_data(candidate) else None
+
+
 def _resolve_statcast_dir(canonical_data_dir: Path) -> Path:
     canonical = canonical_data_dir / "statcast"
     if _has_statcast_data(canonical):
@@ -90,6 +116,9 @@ def _resolve_statcast_dir(canonical_data_dir: Path) -> Path:
     for candidate in _legacy_statcast_dirs():
         if candidate != canonical and _has_statcast_data(candidate):
             return candidate
+    bundled = _frozen_windows_bundled_statcast_dir()
+    if bundled is not None:
+        return bundled
     return canonical
 
 

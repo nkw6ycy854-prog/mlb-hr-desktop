@@ -52,8 +52,18 @@ def test_full_release_assembler_requires_statcast_and_downloads_fresh_windows_ar
     assert 'windows_full_package.py" build' in assembler
     assert 'windows_full_package.py" validate --zip' in assembler
     assert '--self-test-cmd' in assembler
-    assert '"mlb_hr.selftest"' in assembler
-    assert '"--require-runtime-data"' in assembler
+    # The local self-test-cmd is deliberately NOT mlb_hr.selftest run from macOS
+    # source anymore: that used to only pass because _subprocess_self_test()
+    # injected MLB_HR_DATA_DIR, which masked the real shipped bug (the Windows
+    # app.exe couldn't find its own bundled runtime_data/statcast without that
+    # override). It's now a narrowly-scoped local file-copy-integrity check.
+    assert '"mlb_hr.selftest"' not in assembler
+    assert 'local_copy_check.py' in assembler
+    # The real runtime-discovery proof now comes from a hard precondition that
+    # the CI gate's own app.exe self-test (real Windows, no override) already
+    # confirmed statcast_runtime_available=true for this exact release_commit.
+    assert 'statcast_runtime_available' in assembler
+    assert 'windows.json' in assembler
 
 
 def _make_base_bundle(tmp_path: Path) -> Path:

@@ -159,18 +159,22 @@ def validate_full_release_zip(zip_path: Path) -> dict:
 
 
 def _subprocess_self_test(args: list[str]) -> SelfTestRunner:
-    def _run(bundle_dir: Path) -> dict:
-        import os
+    """Runs the given self-test command exactly as given -- no environment
+    manipulation.
 
-        prior = os.environ.get("MLB_HR_DATA_DIR")
-        os.environ["MLB_HR_DATA_DIR"] = str(bundle_dir / "runtime_data")
-        try:
-            cp = subprocess.run(args, capture_output=True, text=True, timeout=90, check=False)
-        finally:
-            if prior is None:
-                os.environ.pop("MLB_HR_DATA_DIR", None)
-            else:
-                os.environ["MLB_HR_DATA_DIR"] = prior
+    This used to unconditionally inject MLB_HR_DATA_DIR=<bundle>/runtime_data
+    before running the command, which made *every* self-test "find" the
+    bundled Statcast data via an override a real end user never sets. That
+    silently masked the real bug (resolve_app_paths() never looked at
+    <bundle_dir>/runtime_data/statcast on its own -- see
+    storage/paths.py's _frozen_windows_bundled_statcast_dir, added to fix
+    this) in every caller, including the CI gate's own real app.exe
+    self-test. The command is now solely responsible for proving discovery
+    under its own real default behavior; cwd is set to bundle_dir to match
+    how a real user launches it (from inside the extracted folder).
+    """
+    def _run(bundle_dir: Path) -> dict:
+        cp = subprocess.run(args, capture_output=True, text=True, timeout=90, check=False, cwd=str(bundle_dir))
         try:
             return json.loads(cp.stdout.strip())
         except json.JSONDecodeError as exc:

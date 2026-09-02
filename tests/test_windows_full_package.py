@@ -261,11 +261,17 @@ def test_cli_build_and_validate_round_trip_via_subprocess(tmp_path):
     output_zip = tmp_path / "out.zip"
     manifest_path = tmp_path / "manifest.json"
 
+    # No MLB_HR_DATA_DIR reliance -- the fake self-test instead checks its own
+    # cwd (which _subprocess_self_test sets to bundle_dir, matching how a
+    # real user launches the app from inside the extracted folder) for the
+    # assembled runtime_data/statcast directory, same shape as the real
+    # discovery this is meant to exercise.
     self_test_script = tmp_path / "fake_self_test.py"
     self_test_script.write_text(
-        "import json, os\n"
-        "print(json.dumps({'passed': True, 'checks': "
-        "{'statcast_runtime_available': bool(os.environ.get('MLB_HR_DATA_DIR'))}}))\n",
+        "import json\n"
+        "from pathlib import Path\n"
+        "found = any(Path.cwd().glob('runtime_data/statcast/season=*/month=*/statcast_*.parquet'))\n"
+        "print(json.dumps({'passed': True, 'checks': {'statcast_runtime_available': found}}))\n",
         encoding="utf-8",
     )
 
@@ -316,3 +322,48 @@ def test_validate_full_release_zip_rejects_manifest_reporting_self_test_failure(
 
     with pytest.raises(wfp.FullPackageError, match="self_test_pass"):
         wfp.validate_full_release_zip(zip_path)
+
+
+def test_subprocess_self_test_never_injects_mlb_hr_data_dir(tmp_path, monkeypatch):
+    """Direct regression guard for the real shipped bug: _subprocess_self_test
+    used to unconditionally set MLB_HR_DATA_DIR before running the self-test
+    command, which made every self-test (including the CI gate's real
+    app.exe) "find" the bundled data via an override a real end user never
+    sets -- masking that resolve_app_paths() never looked at
+    <bundle_dir>/runtime_data/statcast on its own.
+    """
+    monkeypatch.delenv("MLB_HR_DATA_DIR", raising=False)
+    bundle = _make_bundle(tmp_path)
+    probe_script = tmp_path / "probe.py"
+    probe_script.write_text(
+        "import json, os\n"
+        "print(json.dumps({'passed': True, 'checks': {'mlb_hr_data_dir_was_set': "
+        "'MLB_HR_DATA_DIR' in os.environ}}))\n",
+        encoding="utf-8",
+    )
+    import sys as _sys
+    runner = wfp._subprocess_self_test([_sys.executable, str(probe_script)])
+
+    result = runner(bundle)
+
+    assert result["checks"]["mlb_hr_data_dir_was_set"] is False
+    assert "MLB_HR_DATA_DIR" not in __import__("os").environ
+
+
+def test_subprocess_self_test_runs_with_cwd_set_to_bundle_dir(tmp_path):
+    # Matches how a real user launches the app: from inside the extracted
+    # folder, not from wherever the packaging script itself happens to run.
+    bundle = _make_bundle(tmp_path)
+    probe_script = tmp_path / "cwd_probe.py"
+    probe_script.write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        "print(json.dumps({'passed': True, 'checks': {}, 'cwd': str(Path.cwd())}))\n",
+        encoding="utf-8",
+    )
+    import sys as _sys
+    runner = wfp._subprocess_self_test([_sys.executable, str(probe_script)])
+
+    result = runner(bundle)
+
+    assert Path(result["cwd"]).resolve() == bundle.resolve()
