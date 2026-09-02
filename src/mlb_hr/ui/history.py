@@ -147,6 +147,7 @@ class HistoryWidget(QWidget):
         self.players_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.players_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.players_table.cellClicked.connect(self._select_player_row)
+        self.players_table.cellActivated.connect(self._select_player_row)
         self.players_table.horizontalHeader().setStretchLastSection(True)
 
         self.combinations_table = QTableWidget(0, len(COMBINATION_TABLE_HEADERS))
@@ -155,6 +156,7 @@ class HistoryWidget(QWidget):
         self.combinations_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.combinations_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.combinations_table.cellClicked.connect(self._select_combination_row)
+        self.combinations_table.cellActivated.connect(self._select_combination_row)
         self.combinations_table.horizontalHeader().setStretchLastSection(True)
 
         self.hits_today_page = QScrollArea()
@@ -171,6 +173,7 @@ class HistoryWidget(QWidget):
         self.favorites_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.favorites_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.favorites_table.cellClicked.connect(self._select_favorite_row)
+        self.favorites_table.cellActivated.connect(self._select_favorite_row)
         self.favorites_table.horizontalHeader().setStretchLastSection(True)
 
         self.mode_stack.addWidget(self.players_table)

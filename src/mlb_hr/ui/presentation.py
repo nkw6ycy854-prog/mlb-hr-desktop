@@ -39,6 +39,16 @@ _VISUAL_STATE_DISPLAY = {
 }
 
 
+_VISUAL_STATE_TOOLTIPS = {
+    "ALTO RIESGO": "El modelo no recomienda ni vigila este pick, o su clasificación no es reconocida — tratado como el riesgo más alto por seguridad.",
+    "NO ELEGIBLE": "Este jugador no cumple los requisitos mínimos del modelo para generar una predicción (p. ej. sin abridor confirmado o lineup no confirmado).",
+}
+
+
+def visual_state_tooltip(state: str) -> str | None:
+    return _VISUAL_STATE_TOOLTIPS.get(state)
+
+
 def visual_state_display(state: str) -> tuple[str, str]:
     """(icon, QSS tone name) for a visual_state() string.
 

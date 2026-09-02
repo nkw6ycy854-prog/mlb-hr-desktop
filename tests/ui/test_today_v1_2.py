@@ -4,7 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
 
 from mlb_hr.domain.enums import (
     ConfidenceLabel, CriticVerdict, IntegrityStatus, MarketPriceLabel, ModelClassification, ModelHealth,
@@ -246,4 +246,18 @@ def test_refresh_is_a_no_op_while_a_refresh_is_already_in_flight():
     widget.refresh()
 
     assert calls == []
+
+
+def test_enter_on_a_table_row_opens_detail_same_as_a_click():
+    # cellActivated fires on Enter/Return (and double-click) by Qt's own
+    # default -- this just confirms it's wired to the same handler as a
+    # real click, not left as dead keyboard input.
+    app()
+    widget = TodayWidget(object(), None)
+    widget._loaded(_slate([_card(0, 0.2), _card(1, 0.3)]))
+
+    widget.table.cellActivated.emit(1, 0)
+
+    texts = "\n".join(l.text() for l in widget.detail.findChildren(QLabel))
+    assert widget._cards[1].prediction.player.full_name in texts
 

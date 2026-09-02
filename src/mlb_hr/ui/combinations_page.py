@@ -46,14 +46,16 @@ class CombinationCard(QFrame):
             total = stake * combo.estimated_decimal_odds
             layout.addWidget(QLabel(f"PAYOUT: ${stake:.0f} → ${total:.2f}"))
         else:
-            layout.addWidget(QLabel("PAYOUT: N/A"))
+            payout_label = QLabel("PAYOUT: N/A")
+            payout_label.setToolTip("No hay suficientes cuotas de mercado para calcular el pago combinado de esta combinación.")
+            layout.addWidget(payout_label)
             explain = QLabel("SIN CUOTA CONJUNTA — no hay suficientes cuotas de mercado para las piernas de esta combinación.")
             explain.setObjectName("muted")
             explain.setWordWrap(True)
             layout.addWidget(explain)
 
         self.detail_btn = QPushButton("VER DETALLE")
-        self.detail_btn.clicked.connect(lambda: on_detail(kind, label, combo))
+        self.detail_btn.clicked.connect(lambda: on_detail(kind, label, combo, self.detail_btn))
         layout.addWidget(self.detail_btn)
 
 
@@ -112,7 +114,7 @@ class CombinationsPageWidget(QScrollArea):
             cards.append(card)
         self.grid.set_widgets(cards)
 
-    def _show_combo_detail(self, kind: str, label: str, combo: Combination) -> None:
+    def _show_combo_detail(self, kind: str, label: str, combo: Combination, origin_widget=None) -> None:
         self.detail_panel.clear_body()
         qualified = combo.filter_status == CombinationFilterStatus.QUALIFIED
         status = QLabel("✅ CUMPLE FILTRO" if qualified else "⚠ NO CUMPLE FILTRO · ALTO RIESGO")
@@ -126,7 +128,7 @@ class CombinationsPageWidget(QScrollArea):
                 row_text += f" · {state} · {odds}"
                 btn = QPushButton(row_text)
                 btn.setFlat(True)
-                btn.clicked.connect(lambda _checked=False, c=card, k=kind, l=label, cb=combo: self._show_player_detail(c, k, l, cb))
+                btn.clicked.connect(lambda _checked=False, c=card, k=kind, l=label, cb=combo, ow=origin_widget: self._show_player_detail(c, k, l, cb, ow))
                 self.detail_panel.body.addWidget(btn)
             else:
                 self.detail_panel.body.addWidget(QLabel(row_text))
@@ -134,9 +136,13 @@ class CombinationsPageWidget(QScrollArea):
             self.detail_panel.body.addWidget(QLabel(f"Cuota combinada: {combo.estimated_decimal_odds:.2f}"))
         else:
             self.detail_panel.body.addWidget(QLabel("PAYOUT: N/A"))
-        self.detail_panel.open_panel(label)
+        # origin_widget is always the CombinationCard's own VER DETALLE
+        # button that started this flow -- kept stable across VOLVER A
+        # COMBINACIÓN hops so Esc always restores focus to where the user
+        # actually began, not to an intermediate leg.
+        self.detail_panel.open_panel(label, origin_widget=origin_widget)
 
-    def _show_player_detail(self, card, kind: str, label: str, combo: Combination) -> None:
+    def _show_player_detail(self, card, kind: str, label: str, combo: Combination, origin_widget=None) -> None:
         self.detail_panel.clear_body()
         p = card.prediction
         state = visual_state(p.classification, eligible=True)
@@ -148,6 +154,6 @@ class CombinationsPageWidget(QScrollArea):
             self.detail_panel.body.addWidget(QLabel("✓ " + reason))
         self.detail_panel.body.addWidget(QLabel("Riesgo principal: " + (p.main_risk or "Sin advertencias importantes")))
         back_btn = QPushButton("VOLVER A COMBINACIÓN")
-        back_btn.clicked.connect(lambda: self._show_combo_detail(kind, label, combo))
+        back_btn.clicked.connect(lambda: self._show_combo_detail(kind, label, combo, origin_widget))
         self.detail_panel.body.addWidget(back_btn)
-        self.detail_panel.open_panel(p.player.full_name)
+        self.detail_panel.open_panel(p.player.full_name, origin_widget=origin_widget)

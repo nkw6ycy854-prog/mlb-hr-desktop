@@ -14,7 +14,7 @@ from mlb_hr.domain.models import PredictionCard, SlateResult
 from mlb_hr.services.favorites import FavoriteAlreadyExists, FavoritesService
 from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.ui.components import FeedbackButton, ResponsiveGrid
-from mlb_hr.ui.presentation import data_health_ok, display_quote, practical_status, quote_display, visible_cards, visual_state, visual_state_display
+from mlb_hr.ui.presentation import data_health_ok, display_quote, practical_status, quote_display, visible_cards, visual_state, visual_state_display, visual_state_tooltip
 from mlb_hr.ui.workers import FunctionWorker
 
 _FILTER_TODOS = "TODOS"
@@ -109,7 +109,7 @@ class TodayWidget(QWidget):
         # anything, so an Expanding table starves detail below its own minimum
         # height on a short window. The table has its own native scrollbar for
         # extra rows, so it doesn't need to claim vertical space detail can't spare.
-        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Minimum)
+        self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.cellActivated.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Minimum)
         self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail()
         self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);self.main_pair.layout().setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize);top15_layout.addWidget(self.main_pair,1)
         # POR PARTIDOS now lives in its own top-level page (games_page.py);
@@ -302,7 +302,10 @@ class TodayWidget(QWidget):
         prob=QLabel(f"HR%\n{p.final_hr_probability*100:.1f}%");prob.setAlignment(Qt.AlignmentFlag.AlignCenter);prob.setStyleSheet("font-size:20px;font-weight:700;padding:10px;");self.detail_layout.addWidget(prob)
         status=self._card_visual_state(card)
         icon,tone=visual_state_display(status)
-        conf=QLabel(f"{icon} {status} · {p.classification.value} · {p.confidence_label.value} CONFIANZA");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setProperty("tone",tone);self.detail_layout.addWidget(conf)
+        conf=QLabel(f"{icon} {status} · {p.classification.value} · {p.confidence_label.value} CONFIANZA");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setProperty("tone",tone)
+        tooltip=visual_state_tooltip(status)
+        if tooltip:conf.setToolTip(tooltip)
+        self.detail_layout.addWidget(conf)
         qd=quote_display(card)
         best=QLabel(qd.best_text);best.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(best)
         if qd.fanduel_text:
