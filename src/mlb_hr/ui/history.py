@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (
 )
 
 from mlb_hr.services.daily_accuracy import DailyAccuracyService
+from mlb_hr.services.favorites import FavoritesService
 from mlb_hr.services.game_time import GameTimeService
-from mlb_hr.services.history import HistoryFilter, HistoryService
+from mlb_hr.services.history import HistoryFilter, HistoryService, _within_period
 from mlb_hr.services.settlement import SettlementService
 from mlb_hr.services.settlement_coordinator import SettlementCoordinator
 from mlb_hr.ui.presentation import combination_result_label, format_local_time, player_result_label
@@ -18,6 +19,8 @@ from mlb_hr.ui.workers import FunctionWorker
 
 PLAYER_TABLE_HEADERS = ["Fecha", "Hora", "Jugador", "HR%", "Estado", "Cuota", "Resultado"]
 COMBINATION_TABLE_HEADERS = ["Fecha", "Inicio", "Tipo", "Selecciones", "Filtro", "Cuota", "Resultado", "P/L"]
+FAVORITES_TABLE_HEADERS = ["Fecha", "Jugador", "Juego", "HR% guardado", "Estado guardado", "Cuota guardada", "Resultado"]
+_FAVORITE_RESULT_LABELS = {"PENDING": "PENDIENTE", "HR": "HR", "NO_HR": "NO HR", "NO_DISPONIBLE": "NO DISPONIBLE"}
 
 _PERIOD_BUTTONS = [("TODAY", "HOY"), ("7D", "7 DÍAS"), ("30D", "30 DÍAS"), ("ALL", "TODO")]
 _STATUS_OPTIONS = [("ALL", "Todos"), ("RECOMMENDED", "Recomendado"), ("WATCH", "Vigilar"), ("NO_FILTER", "No cumple filtro")]
@@ -34,12 +37,14 @@ class HistoryWidget(QWidget):
         self.store = store
         self.history_service = HistoryService(store)
         self.daily_accuracy_service = DailyAccuracyService(store)
+        self.favorites_service = FavoritesService(store)
         self.settlement_runner = settlement_runner or SettlementCoordinator(SettlementService(store)).refresh_pending
         self.thread_pool = QThreadPool.globalInstance()
         self.timezone_name = store.get_state("timezone_name", None) or GameTimeService.DEFAULT_TIMEZONE
         self._period = "ALL"
         self._player_records: list = []
         self._combination_records: list = []
+        self._favorite_rows: list = []
         self._daily_accuracy = None
         self._build()
         self.refresh()
@@ -86,7 +91,11 @@ class HistoryWidget(QWidget):
         self.hits_today_btn.setObjectName("navButton")
         self.hits_today_btn.setCheckable(True)
         self.hits_today_btn.clicked.connect(lambda: self.set_mode(2))
-        for btn in (self.players_btn, self.combinations_btn, self.hits_today_btn):
+        self.favoritos_btn = QPushButton("★ FAVORITOS")
+        self.favoritos_btn.setObjectName("navButton")
+        self.favoritos_btn.setCheckable(True)
+        self.favoritos_btn.clicked.connect(lambda: self.set_mode(3))
+        for btn in (self.players_btn, self.combinations_btn, self.hits_today_btn, self.favoritos_btn):
             self.mode_group.addButton(btn)
             mode_row.addWidget(btn)
         mode_row.addStretch()
@@ -156,9 +165,18 @@ class HistoryWidget(QWidget):
         self.hits_today_page.setWidget(hits_today_container)
         self._hits_today_frames: list[QFrame] = []
 
+        self.favorites_table = QTableWidget(0, len(FAVORITES_TABLE_HEADERS))
+        self.favorites_table.setHorizontalHeaderLabels(FAVORITES_TABLE_HEADERS)
+        self.favorites_table.verticalHeader().setVisible(False)
+        self.favorites_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.favorites_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.favorites_table.cellClicked.connect(self._select_favorite_row)
+        self.favorites_table.horizontalHeader().setStretchLastSection(True)
+
         self.mode_stack.addWidget(self.players_table)
         self.mode_stack.addWidget(self.combinations_table)
         self.mode_stack.addWidget(self.hits_today_page)
+        self.mode_stack.addWidget(self.favorites_table)
         body.addWidget(self.mode_stack, 3)
 
         self.detail = QFrame()
@@ -208,16 +226,22 @@ class HistoryWidget(QWidget):
         self._combination_records = self.history_service.combination_records(filter_, now)
         local_today = GameTimeService(self.timezone_name).localize(now).date()
         self._daily_accuracy = self.daily_accuracy_service.for_date(local_today, self.timezone_name)
+        all_favorites = self.favorites_service.list_favorites_with_results()
+        self._favorite_rows = [
+            r for r in all_favorites
+            if _within_period(datetime.fromisoformat(r["created_at"]), self._period, now)
+        ]
         self._render_metrics()
         self._render_players_table()
         self._render_combinations_table()
         self.render_hits_today()
+        self._render_favorites_table()
         self._render_empty_state()
 
     def _render_empty_state(self) -> None:
         # ACIERTOS HOY (mode 2) has its own empty-state message inside
-        # render_hits_today(); this only covers JUGADORES/COMBINACIONES so an
-        # empty table is never shown without an explanation.
+        # render_hits_today(); this only covers JUGADORES/COMBINACIONES/
+        # FAVORITOS so an empty table is never shown without an explanation.
         mode = self.mode_stack.currentIndex()
         if mode == 0 and not self._player_records:
             self.empty_state_label.setText("No hay historial de jugadores para los filtros seleccionados.")
@@ -225,8 +249,32 @@ class HistoryWidget(QWidget):
         elif mode == 1 and not self._combination_records:
             self.empty_state_label.setText("No hay historial de combinaciones para los filtros seleccionados.")
             self.empty_state_label.setVisible(True)
+        elif mode == 3 and not self._favorite_rows:
+            self.empty_state_label.setText("No hay favoritos para este período.")
+            self.empty_state_label.setVisible(True)
         else:
             self.empty_state_label.setVisible(False)
+
+    def _render_favorites_table(self) -> None:
+        records = self._favorite_rows
+        self.favorites_table.setRowCount(len(records))
+        for r, rec in enumerate(records):
+            date_text = datetime.fromisoformat(rec["created_at"]).date().isoformat()
+            game_time = datetime.fromisoformat(rec["game_time"]) if rec["game_time"] else None
+            time_text = format_local_time(game_time, self.timezone_name) if game_time else "—"
+            hr_text = f"{rec['snapshot_hr_probability']*100:.1f}%" if rec["snapshot_hr_probability"] is not None else "—"
+            odds_text = f"{int(rec['snapshot_best_american_odds']):+d}" if rec["snapshot_best_american_odds"] is not None else "—"
+            result_text = _FAVORITE_RESULT_LABELS.get(rec["result"], rec["result"])
+            vals = [
+                date_text, rec["player_name"], f"{rec['team_name']} vs {rec['opponent_name']} · {time_text}",
+                hr_text, rec["snapshot_practical_status"], odds_text, result_text,
+            ]
+            for c, v in enumerate(vals):
+                item = QTableWidgetItem(str(v))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c not in {1, 2} else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                self.favorites_table.setItem(r, c, item)
+        self.favorites_table.resizeColumnsToContents()
+        self.favorites_table.horizontalHeader().setStretchLastSection(True)
 
     def _refresh_results(self) -> None:
         self.refresh_results_btn.setEnabled(False)
@@ -261,6 +309,22 @@ class HistoryWidget(QWidget):
                 w.deleteLater()
         if self.mode_stack.currentIndex() == 2:
             return  # ACIERTOS HOY renders its own summary inside render_hits_today()
+        if self.mode_stack.currentIndex() == 3:
+            # Favoritos never derive Hit Rate/P&L/ROI (they are not bets) --
+            # only simple counts of the snapshot/result data already shown.
+            records = self._favorite_rows
+            vals = [
+                ("Guardados", str(len(records))),
+                ("HR", str(sum(1 for r in records if r["result"] == "HR"))),
+                ("Pendientes", str(sum(1 for r in records if r["result"] == "PENDING"))),
+            ]
+            for i, (name, val) in enumerate(vals):
+                frame = QFrame(); frame.setObjectName("card"); lay = QVBoxLayout(frame)
+                a = QLabel(name); a.setObjectName("muted")
+                v = QLabel(val); v.setStyleSheet("font-size:18px;font-weight:700")
+                lay.addWidget(a); lay.addWidget(v)
+                self.metrics.addWidget(frame, i // 3, i % 3)
+            return
         if self.mode_stack.currentIndex() == 0:
             summary = HistoryService.summarize_players(self._player_records)
             vals = [
@@ -331,6 +395,42 @@ class HistoryWidget(QWidget):
     def _select_combination_row(self, row: int, _col: int) -> None:
         if 0 <= row < len(self._combination_records):
             self._show_combination_detail(self._combination_records[row])
+
+    def _select_favorite_row(self, row: int, _col: int) -> None:
+        if 0 <= row < len(self._favorite_rows):
+            self._show_favorite_detail(self._favorite_rows[row])
+
+    def _show_favorite_detail(self, rec: dict) -> None:
+        self._clear_detail()
+        title = QLabel(rec["player_name"])
+        title.setObjectName("section")
+        self.detail_layout.insertWidget(0, title)
+        idx = 1
+        snapshot_header = QLabel("SNAPSHOT AL GUARDAR")
+        snapshot_header.setStyleSheet("font-weight:700;")
+        self.detail_layout.insertWidget(idx, snapshot_header); idx += 1
+        date_text = datetime.fromisoformat(rec["created_at"]).date().isoformat()
+        hr_text = f"{rec['snapshot_hr_probability']*100:.1f}%" if rec["snapshot_hr_probability"] is not None else "—"
+        odds_text = f"{int(rec['snapshot_best_american_odds']):+d}" if rec["snapshot_best_american_odds"] is not None else "—"
+        fanduel_text = f"{int(rec['snapshot_fanduel_american_odds']):+d}" if rec["snapshot_fanduel_american_odds"] is not None else "—"
+        for line in (
+            f"Guardado: {date_text}",
+            f"{rec['team_name']} vs {rec['opponent_name']}",
+            f"HR%: {hr_text}",
+            f"Estado: {rec['snapshot_practical_status']}",
+            f"Classification: {rec['snapshot_classification']}",
+            f"Confidence: {rec['snapshot_confidence_label']}",
+            f"Mejor cuota: {odds_text} ({rec['snapshot_best_bookmaker'] or '—'})",
+            f"FanDuel: {fanduel_text}",
+        ):
+            self.detail_layout.insertWidget(idx, QLabel(line)); idx += 1
+        result_header = QLabel("RESULTADO FINAL")
+        result_header.setStyleSheet("font-weight:700;margin-top:8px;")
+        self.detail_layout.insertWidget(idx, result_header); idx += 1
+        result_text = _FAVORITE_RESULT_LABELS.get(rec["result"], rec["result"])
+        self.detail_layout.insertWidget(idx, QLabel(result_text)); idx += 1
+        if rec.get("operational_status"):
+            self.detail_layout.insertWidget(idx, QLabel(f"Estado operativo: {rec['operational_status']}")); idx += 1
 
     def _show_player_detail(self, record) -> None:
         self._clear_detail()

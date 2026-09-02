@@ -62,3 +62,52 @@ class FavoritesService:
     def list_favorites(self) -> list[sqlite3.Row]:
         with self.store.connection() as con:
             return list(con.execute("SELECT * FROM favorites ORDER BY created_at DESC"))
+
+    def list_favorites_with_results(self) -> list[dict]:
+        """Favorites joined to their canonical current prediction/settlement
+        (is_latest_pregame=1 AND pregame_valid=1, the same pattern used
+        everywhere else in the app) -- never derives or invents a result;
+        only reads what settlement already produced. Snapshot fields are
+        passed through untouched.
+        """
+        with self.store.connection() as con:
+            rows = con.execute(
+                """
+                SELECT f.*, s.status settlement_status, s.actual_hr_binary, p.prediction_id cur_prediction_id
+                FROM favorites f
+                LEFT JOIN predictions p
+                  ON p.player_id=f.player_id AND p.game_pk=f.game_pk
+                 AND p.is_latest_pregame=1 AND p.pregame_valid=1
+                LEFT JOIN settlements s ON s.prediction_id=p.prediction_id AND s.active=1
+                ORDER BY f.created_at DESC
+                """
+            ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            if d["cur_prediction_id"] is None:
+                d["result"] = "NO_DISPONIBLE"
+            elif d["settlement_status"] == "CONFIRMED_SETTLEMENT":
+                d["result"] = "HR" if d["actual_hr_binary"] else "NO_HR"
+            else:
+                d["result"] = "PENDING"
+            out.append(d)
+        return out
+
+    def reconcile_operational_status(self, game_contexts) -> None:
+        """Updates favorites.operational_status from real GameState signals
+        only (POSTPONED/CANCELLED on the SAME game_pk) -- never inferred
+        from a game_pk simply being absent from today's schedule, which is
+        the normal case for any already-resolved favorite and would
+        misfire as a false RESCHEDULED on every one of them. Never touches
+        the immutable snapshot fields.
+        """
+        state_by_game_pk = {g.game_pk: g.state.value for g in game_contexts}
+        with self.store.transaction() as con:
+            for row in con.execute("SELECT player_id, game_pk FROM favorites").fetchall():
+                state = state_by_game_pk.get(row["game_pk"])
+                if state in ("POSTPONED", "CANCELLED"):
+                    con.execute(
+                        "UPDATE favorites SET operational_status=? WHERE player_id=? AND game_pk=?",
+                        (state, row["player_id"], row["game_pk"]),
+                    )

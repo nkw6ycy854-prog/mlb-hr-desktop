@@ -1,4 +1,6 @@
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 import json
 
@@ -21,6 +23,14 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
+@contextmanager
+def _empty_connection():
+    # FavoritesService.list_favorites_with_results() always runs during
+    # HistoryWidget.refresh() now; these fake stores have no favorites data
+    # to give, so a real SQLite-shaped "no rows" stub is enough.
+    yield SimpleNamespace(execute=lambda *a, **k: SimpleNamespace(fetchone=lambda: None, fetchall=lambda: []))
+
+
 class _FakeStore:
     def history_prediction_rows(self, limit=2000):
         return []
@@ -36,6 +46,9 @@ class _FakeStore:
 
     def get_state(self, key, default=None):
         return default
+
+    def connection(self):
+        return _empty_connection()
 
 
 def _widget() -> HistoryWidget:
@@ -142,6 +155,9 @@ def _tz_store(timezone_name="America/Santo_Domingo"):
 
         def get_state(self, key, default=None):
             return self.timezone_name if key == "timezone_name" else default
+
+        def connection(self):
+            return _empty_connection()
 
     return _TzStore()
 
@@ -306,6 +322,9 @@ def _hits_today_store():
 
         def get_state(self, key, default=None):
             return "America/Santo_Domingo" if key == "timezone_name" else default
+
+        def connection(self):
+            return _empty_connection()
 
     return _Store()
 
