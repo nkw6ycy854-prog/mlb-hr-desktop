@@ -15,6 +15,55 @@ def practical_status(classification: ModelClassification) -> str:
     return "NO CUMPLE FILTRO"
 
 
+UNKNOWN_CLASSIFICATION_VISUAL_STATE = "ALTO RIESGO"
+
+_KNOWN_CLASSIFICATIONS = frozenset(ModelClassification)
+
+_VISUAL_STATE_BY_CLASSIFICATION = {
+    ModelClassification.PRIMARY: "RECOMENDADO",
+    ModelClassification.SECONDARY: "RECOMENDADO",
+    ModelClassification.WATCH: "VIGILAR",
+    ModelClassification.NO_BET: "ALTO RIESGO",
+}
+
+
+def is_known_classification(classification) -> bool:
+    return classification in _KNOWN_CLASSIFICATIONS
+
+
+_VISUAL_STATE_DISPLAY = {
+    "RECOMENDADO": ("●", "recomendado"),
+    "VIGILAR": ("◐", "vigilar"),
+    "ALTO RIESGO": ("▲", "alto_riesgo"),
+    "NO ELEGIBLE": ("✕", "no_elegible"),
+}
+
+
+def visual_state_display(state: str) -> tuple[str, str]:
+    """(icon, QSS tone name) for a visual_state() string.
+
+    The state is never shown as color alone -- always text + a distinct
+    icon/shape + color, per the approved plan.
+    """
+    return _VISUAL_STATE_DISPLAY.get(state, ("▲", "alto_riesgo"))
+
+
+def visual_state(classification, *, eligible: bool) -> str:
+    """V1.2.0's presentation-only state mapping (approved plan).
+
+    eligible=False is absolute and always wins, regardless of
+    classification -- this is a display layer over `classification` and
+    `eligible`, exactly as produced today; it never feeds back into either.
+    An unknown/future classification value falls back to ALTO RIESGO,
+    matching the approved plan's runtime-safety rule (callers are
+    responsible for logging a REQUIERE ATENCIÓN audit event via
+    is_known_classification()).
+    """
+    if not eligible:
+        return "NO ELEGIBLE"
+    return _VISUAL_STATE_BY_CLASSIFICATION.get(classification, UNKNOWN_CLASSIFICATION_VISUAL_STATE)
+
+
 def visible_cards(cards, *, expanded: bool, limit: int = 15):
     ordered = sorted(cards, key=lambda c: c.prediction.final_hr_probability, reverse=True)
     return ordered if expanded else ordered[:limit]

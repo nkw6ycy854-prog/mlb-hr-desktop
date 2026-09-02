@@ -20,6 +20,10 @@ QLabel[tone="good"] { color: #61c991; font-weight: 600; }
 QLabel[tone="warning"] { color: #e7bd62; font-weight: 600; }
 QLabel[tone="bad"] { color: #e77b75; font-weight: 600; }
 QLabel[tone="muted"] { color: #9da5b4; }
+QLabel[tone="recomendado"] { color: #61c991; font-weight: 600; }
+QLabel[tone="vigilar"] { color: #e7bd62; font-weight: 600; }
+QLabel[tone="alto_riesgo"] { color: #e08a4b; font-weight: 600; }
+QLabel[tone="no_elegible"] { color: #9da5b4; font-weight: 600; }
 QTableWidget { background: #171a20; border: 1px solid #252b34; gridline-color: #252b34; border-radius: 8px; selection-background-color: #29323d; }
 QTableWidget::item { padding: 4px 6px; }
 QHeaderView::section { background: #20242c; color: #aeb6c4; border: 0; padding: 8px; font-weight: 600; }
