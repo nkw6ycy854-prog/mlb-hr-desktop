@@ -300,3 +300,76 @@ def test_closing_status_center_restores_the_previous_page(monkeypatch):
 
     assert w.pages.currentIndex() == 2
     assert w._nav_buttons[2].isChecked() is True
+
+
+# --- AJUSTES staged save: CAMBIOS SIN GUARDAR intercept ---
+
+class DummyDirtySettings(DummyPage):
+    def __init__(self, *_):
+        super().__init__()
+        self.dirty = True
+        self.saved = False
+        self.discarded = False
+
+    def is_dirty(self):
+        return self.dirty
+
+    def save(self):
+        self.saved = True
+        self.dirty = False
+
+    def discard_changes(self):
+        self.discarded = True
+        self.dirty = False
+
+
+def test_navigating_away_from_dirty_ajustes_asks_and_volver_cancels(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.settings = DummyDirtySettings()
+    w.set_page(4)
+    w.confirm_unsaved_settings_changes = lambda: "VOLVER"
+
+    w.set_page(0)
+
+    assert w.pages.currentIndex() == 4
+    assert w.settings.saved is False
+    assert w.settings.discarded is False
+
+
+def test_navigating_away_with_descartar_discards_and_proceeds(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.settings = DummyDirtySettings()
+    w.set_page(4)
+    w.confirm_unsaved_settings_changes = lambda: "DESCARTAR"
+
+    w.set_page(0)
+
+    assert w.pages.currentIndex() == 0
+    assert w.settings.discarded is True
+    assert w.settings.saved is False
+
+
+def test_navigating_away_with_guardar_y_salir_saves_and_proceeds(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.settings = DummyDirtySettings()
+    w.set_page(4)
+    w.confirm_unsaved_settings_changes = lambda: "GUARDAR_Y_SALIR"
+
+    w.set_page(0)
+
+    assert w.pages.currentIndex() == 0
+    assert w.settings.saved is True
+
+
+def test_navigating_away_from_clean_ajustes_never_prompts(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.settings = DummyDirtySettings()
+    w.settings.dirty = False
+    w.set_page(4)
+    calls = []
+    w.confirm_unsaved_settings_changes = lambda: calls.append(1)
+
+    w.set_page(0)
+
+    assert calls == []
+    assert w.pages.currentIndex() == 0

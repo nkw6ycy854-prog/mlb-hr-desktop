@@ -70,6 +70,7 @@ class SettingsWidget(QWidget):
         self.open_url_func = open_url_func or (lambda url: QDesktopServices.openUrl(url))
         self.thread_pool = QThreadPool.globalInstance()
         self._build()
+        self._saved_snapshot = self._capture_snapshot()
 
     @property
     def paths(self):
@@ -100,7 +101,7 @@ class SettingsWidget(QWidget):
         self.feedback.setWordWrap(True)
         root.addWidget(self.feedback)
 
-        save = QPushButton("GUARDAR")
+        save = QPushButton("GUARDAR CAMBIOS")
         save.setObjectName("primaryButton")
         save.clicked.connect(self.save)
         root.addWidget(save)
@@ -235,6 +236,69 @@ class SettingsWidget(QWidget):
         self.stake_custom_label.setVisible(is_custom)
         self.stake_custom.setVisible(is_custom)
 
+    def _current_stake_value(self) -> float:
+        if self.stake.currentText() == CUSTOM_STAKE_LABEL:
+            return round(float(self.stake_custom.value()), 2)
+        return float(self.stake.currentText().replace("$", ""))
+
+    def _capture_snapshot(self) -> dict:
+        # Compares against what the fields showed right after loading (or
+        # after the last save/discard), not a reconstruction of the store's
+        # defaults -- a QComboBox with nothing persisted yet still shows
+        # *some* real selection (its first item), which is not itself a
+        # user change.
+        return {
+            "stake": self._current_stake_value(),
+            "timezone": self.timezone.currentText(),
+            "ai_provider": self.ai_provider.currentText(),
+            "ai_review_enabled": self.ai_review_enabled.isChecked(),
+            "groq_model": self.groq_model.text(),
+            "gemini_model": self.gemini_model.text(),
+            "openrouter_model": self.openrouter_model.text(),
+            "ollama_model": self.ollama_model.text(),
+            # Secrets are masked/write-only (never read back from the
+            # keyring), so their snapshot baseline is simply "whatever the
+            # field showed right after loading/last save/discard" -- typing
+            # something new diverges from that baseline exactly like any
+            # other field, and a successful save re-baselines it same as them.
+            "odds_key": self.odds_key.text(),
+            "groq_key": self.groq_key.text(),
+            "gemini_key": self.gemini_key.text(),
+            "openrouter_key": self.openrouter_key.text(),
+        }
+
+    def is_dirty(self) -> bool:
+        """Never touches the model/HR%/ranking/classification/confidence/
+        thresholds/calibration/training/holdout/eligible -- this is
+        settings-only bookkeeping.
+        """
+        return self._capture_snapshot() != self._saved_snapshot
+
+    def discard_changes(self) -> None:
+        """Reverts every field to its last-saved value -- used by CAMBIOS
+        SIN GUARDAR's DESCARTAR option. Secret fields revert to whatever
+        they showed at that same last-saved baseline (usually empty,
+        unless the user had already saved a freshly-typed key this
+        session) -- never to the real stored secret, which is never read
+        back for display.
+        """
+        snap = self._saved_snapshot
+        matched_label = _PREDEFINED_STAKE_VALUES.get(snap["stake"])
+        self.stake.setCurrentText(matched_label or CUSTOM_STAKE_LABEL)
+        self.stake_custom.setValue(snap["stake"])
+        self.timezone.setCurrentText(snap["timezone"])
+        self.ai_provider.setCurrentText(snap["ai_provider"])
+        self.ai_review_enabled.setChecked(snap["ai_review_enabled"])
+        self.odds_key.setText(snap["odds_key"])
+        self.groq_key.setText(snap["groq_key"])
+        self.gemini_key.setText(snap["gemini_key"])
+        self.openrouter_key.setText(snap["openrouter_key"])
+        self.groq_model.setText(snap["groq_model"])
+        self.gemini_model.setText(snap["gemini_model"])
+        self.openrouter_model.setText(snap["openrouter_model"])
+        self.ollama_model.setText(snap["ollama_model"])
+        self._saved_snapshot = self._capture_snapshot()
+
     def save(self) -> None:
         changed: list[str] = []
         restart_needed = False
@@ -308,6 +372,7 @@ class SettingsWidget(QWidget):
                 parts.append("Reinicia la app para recargar los providers configurados.")
             self.feedback.setText(" ".join(parts))
             self.feedback.setObjectName("good")
+        self._saved_snapshot = self._capture_snapshot()
 
     def _test_connection(self) -> None:
         self.test_connection_btn.setEnabled(False)

@@ -321,3 +321,61 @@ def test_selftest_label_uses_configured_timezone_not_os_local():
     iso_text = datetime(2026, 8, 26, 23, 15, tzinfo=timezone.utc).isoformat()
 
     assert widget._selftest_label(True, iso_text) == "● PASS · 7:15 PM"
+
+
+# --- V1.2.0 staged save: dirty tracking / discard / GUARDAR CAMBIOS ---
+
+def test_button_label_is_guardar_cambios_not_guardar():
+    widget = _widget()
+    save_buttons = [b for b in widget.findChildren(type(widget.run_selftest_btn)) if b.text() == "GUARDAR CAMBIOS"]
+    assert save_buttons
+
+
+def test_is_dirty_is_false_immediately_after_construction():
+    widget = _widget()
+    assert widget.is_dirty() is False
+
+
+def test_is_dirty_becomes_true_after_changing_timezone():
+    widget = _widget()
+    widget.timezone.setCurrentText("America/New_York")
+    assert widget.is_dirty() is True
+
+
+def test_is_dirty_is_false_again_after_saving():
+    widget = _widget()
+    widget.timezone.setCurrentText("America/New_York")
+    assert widget.is_dirty() is True
+
+    widget.save()
+
+    assert widget.is_dirty() is False
+
+
+def test_typing_an_api_key_marks_dirty():
+    widget = _widget()
+    widget.odds_key.setText("sk-test-123")
+    assert widget.is_dirty() is True
+
+
+def test_discard_changes_reverts_timezone_to_stored_value():
+    store = _FakeStore()
+    store.set_state("timezone_name", "America/Santo_Domingo")
+    widget = _widget(store)
+    widget.timezone.setCurrentText("America/New_York")
+    assert widget.is_dirty() is True
+
+    widget.discard_changes()
+
+    assert widget.timezone.currentText() == "America/Santo_Domingo"
+    assert widget.is_dirty() is False
+
+
+def test_discard_changes_clears_typed_api_keys():
+    widget = _widget()
+    widget.odds_key.setText("sk-test-123")
+
+    widget.discard_changes()
+
+    assert widget.odds_key.text() == ""
+    assert widget.is_dirty() is False

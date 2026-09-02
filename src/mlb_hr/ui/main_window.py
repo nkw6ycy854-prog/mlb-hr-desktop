@@ -110,7 +110,24 @@ class MainWindow(QMainWindow):
         self.nav_group.addButton(btn)
         return btn
 
+    AJUSTES_PAGE_INDEX = 4
+
     def set_page(self, index: int) -> None:
+        if (
+            self.pages.currentIndex() == self.AJUSTES_PAGE_INDEX
+            and index != self.AJUSTES_PAGE_INDEX
+            and hasattr(self.settings, "is_dirty") and self.settings.is_dirty()
+        ):
+            decision = self.confirm_unsaved_settings_changes()
+            if decision == "VOLVER":
+                for i, btn in enumerate(self._nav_buttons):
+                    btn.setChecked(i == self.AJUSTES_PAGE_INDEX)
+                return
+            if decision == "GUARDAR_Y_SALIR":
+                self.settings.save()
+            else:  # DESCARTAR
+                self.settings.discard_changes()
+
         self.pages.setCurrentIndex(index)
         # set_page() can be reached without a nav-button click (e.g. "ABRIR
         # AJUSTES" from TodayWidget's health-failure banner calls this
@@ -120,6 +137,27 @@ class MainWindow(QMainWindow):
             btn.setChecked(i == index)
         if index == 3:
             self.history.refresh()
+
+    def confirm_unsaved_settings_changes(self) -> str:
+        """Returns "VOLVER" | "DESCARTAR" | "GUARDAR_Y_SALIR". A plain
+        method (not inlined) so tests can monkeypatch it without driving a
+        real modal dialog.
+        """
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setWindowTitle("Cambios sin guardar")
+        box.setText("CAMBIOS SIN GUARDAR")
+        discard_btn = box.addButton("DESCARTAR", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("VOLVER", QMessageBox.ButtonRole.RejectRole)
+        save_btn = box.addButton("GUARDAR Y SALIR", QMessageBox.ButtonRole.AcceptRole)
+        box.setDefaultButton(save_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is discard_btn:
+            return "DESCARTAR"
+        if clicked is save_btn:
+            return "GUARDAR_Y_SALIR"
+        return "VOLVER"
 
     def _on_today_loaded(self, result) -> None:
         self.games_page.render(result)
