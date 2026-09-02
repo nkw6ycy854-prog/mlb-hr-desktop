@@ -18,6 +18,7 @@ class DummyGamesPage(mw.QWidget):
 def _patch(monkeypatch):
     monkeypatch.setattr(mw, "TodayWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "GamesPageWidget", lambda *_: DummyGamesPage())
+    monkeypatch.setattr(mw, "CombinationsPageWidget", lambda *_: DummyGamesPage())
     monkeypatch.setattr(mw, "HistoryWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "SettingsWidget", lambda *_, **__: DummyPage())
 
@@ -29,26 +30,29 @@ def test_sidebar_navigation_changes_page(monkeypatch):
     assert w.pages.currentIndex() == 0
     QTest.mouseClick(w.nav_games, Qt.MouseButton.LeftButton)
     assert w.pages.currentIndex() == 1
-    QTest.mouseClick(w.nav_history, Qt.MouseButton.LeftButton)
+    QTest.mouseClick(w.nav_combinations, Qt.MouseButton.LeftButton)
     assert w.pages.currentIndex() == 2
-    QTest.mouseClick(w.nav_settings, Qt.MouseButton.LeftButton)
+    QTest.mouseClick(w.nav_history, Qt.MouseButton.LeftButton)
     assert w.pages.currentIndex() == 3
+    QTest.mouseClick(w.nav_settings, Qt.MouseButton.LeftButton)
+    assert w.pages.currentIndex() == 4
 
 
 def test_set_page_called_programmatically_still_syncs_sidebar_active_state(monkeypatch):
     # Reproduces the real ABRIR AJUSTES flow: TodayWidget's health-failure
-    # banner calls self.set_page(3) directly (not a click on nav_settings),
+    # banner calls self.set_page(4) directly (not a click on nav_settings),
     # so the sidebar's checked state has to be kept in sync in set_page()
     # itself, not rely on QButtonGroup's own click-driven toggle.
     QApplication.instance() or QApplication([])
     _patch(monkeypatch)
     w = mw.MainWindow(object(), object())
 
-    w.set_page(3)
+    w.set_page(4)
 
     assert w.nav_settings.isChecked() is True
     assert w.nav_today.isChecked() is False
     assert w.nav_games.isChecked() is False
+    assert w.nav_combinations.isChecked() is False
     assert w.nav_history.isChecked() is False
 
     w.set_page(0)

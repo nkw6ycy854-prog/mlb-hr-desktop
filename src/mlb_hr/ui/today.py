@@ -112,8 +112,6 @@ class TodayWidget(QWidget):
         self.table=QTableWidget(0,len(columns));self.table.setHorizontalHeaderLabels(columns);self.table.verticalHeader().setVisible(False);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setAlternatingRowColors(False);self.table.cellClicked.connect(self._select_row);self.table.horizontalHeader().setStretchLastSection(True);self.table.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Minimum)
         self.detail=QFrame();self.detail.setObjectName("card");self.detail.setMinimumWidth(310);self.detail.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(18,18,18,18);self._clear_detail()
         self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);self.main_pair.layout().setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize);top15_layout.addWidget(self.main_pair,1)
-        self.combo_section_label=QLabel("COMBINACIONES");self.combo_section_label.setObjectName("section");top15_layout.addWidget(self.combo_section_label)
-        self.combo_grid=ResponsiveGrid(two_column_min_width=760);self._combo_frames:list[QFrame]=[];top15_layout.addWidget(self.combo_grid)
         # POR PARTIDOS now lives in its own top-level page (games_page.py);
         # this QScrollArea wrapper still isolates TOP 15's own minimum-size
         # floor from the rest of MainWindow's pages (same pattern used by
@@ -138,7 +136,7 @@ class TodayWidget(QWidget):
         self.updated.setText("Actualizado "+self._time_service().format_time(result.updated_at))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_dashboard(result)
-        self._render_table();self._render_combos()
+        self._render_table()
         if self.on_loaded:self.on_loaded(result)
         if self.settlement_trigger:self.settlement_trigger()
 
@@ -381,25 +379,3 @@ class TodayWidget(QWidget):
             text+=f" | FanDuel {m.quote.american_odds:+d}"
         QGuiApplication.clipboard().setText(text)
         self.copy_btn.show_feedback("COPIADO")
-
-    def _render_combos(self)->None:
-        for frame in self._combo_frames:frame.deleteLater()
-        combos={c.kind:c for c in (self.current.combinations if self.current else [])}
-        frames=[]
-        for kind,label in [("BEST_2_MAN","BEST 2-MAN"),("BEST_3_MAN","BEST 3-MAN"),("LONG_SHOT_2_MAN","LONG-SHOT 2-MAN"),("LONG_SHOT_3_MAN","LONG-SHOT 3-MAN")]:
-            frame=QFrame();frame.setObjectName("card");lay=QVBoxLayout(frame);title=QLabel(label);title.setStyleSheet("font-weight:700");lay.addWidget(title)
-            combo=combos.get(kind)
-            if not combo:
-                lay.addWidget(QLabel("NO HAY SUFICIENTES JUGADORES ANALIZADOS"))
-            else:
-                qualified=combo.filter_status==CombinationFilterStatus.QUALIFIED
-                status_text="✅ CUMPLE FILTRO · RECOMENDADA" if qualified else "⚠ NO CUMPLE FILTRO · ALTO RIESGO"
-                status_label=QLabel(status_text);status_label.setObjectName("good" if qualified else "warning");lay.addWidget(status_label)
-                for leg in combo.legs:
-                    lay.addWidget(QLabel(f"{leg.player_name} · {leg.classification.value}"))
-                if combo.estimated_decimal_odds:
-                    total=self.service.stake*combo.estimated_decimal_odds;lay.addWidget(QLabel(f"Pago estimado · ${self.service.stake:.0f} → ${total:.2f}"))
-                else:lay.addWidget(QLabel("SIN CUOTA CONJUNTA"))
-            frames.append(frame)
-        self._combo_frames=frames
-        self.combo_grid.set_widgets(frames)

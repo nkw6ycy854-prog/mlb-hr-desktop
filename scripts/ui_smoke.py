@@ -285,7 +285,7 @@ def main() -> int:
         app.processEvents()
         settings = window.settings
         result["settings"] = (
-            window.pages.currentIndex() == 3
+            window.pages.currentIndex() == 4
             and hasattr(settings, "stake") and hasattr(settings, "stake_custom")
             and hasattr(settings, "timezone") and not hasattr(settings, "density")
         )

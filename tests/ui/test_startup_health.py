@@ -169,6 +169,7 @@ def _main_window(monkeypatch):
     app()
     monkeypatch.setattr(mw, "TodayWidget", lambda *_: DummyToday())
     monkeypatch.setattr(mw, "GamesPageWidget", lambda *_: DummyGamesPage())
+    monkeypatch.setattr(mw, "CombinationsPageWidget", lambda *_: DummyGamesPage())
     monkeypatch.setattr(mw, "HistoryWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "SettingsWidget", lambda *_, **__: DummyPage())
     return mw.MainWindow(object(), object())
@@ -192,7 +193,7 @@ def test_apply_health_report_shows_failure_and_open_settings_switches_page(monke
     assert w.today.refreshed is False
     assert w.today.failure_report is report
     w.today._on_open_settings()
-    assert w.pages.currentIndex() == 3
+    assert w.pages.currentIndex() == 4
 
 
 def test_apply_health_report_retry_uses_supplied_callback(monkeypatch):
