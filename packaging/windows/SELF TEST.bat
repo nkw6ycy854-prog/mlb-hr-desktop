@@ -1,7 +1,6 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "MLB_HR_DATA_DIR=%~dp0runtime_data"
 
 echo Ejecutando self-test de MLB HR con datos Statcast obligatorios...
 echo.

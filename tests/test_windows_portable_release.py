@@ -6,15 +6,23 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_STATCAST_FIXTURE = ROOT / "tests" / "fixtures" / "statcast_ci_fixture"
 
 
-def test_windows_launchers_pin_runtime_data_next_to_executable():
+def test_windows_launchers_never_override_data_dir_and_let_app_exe_self_discover():
+    # Neither launcher may set MLB_HR_DATA_DIR: app.exe must discover
+    # runtime_data/statcast entirely on its own (see
+    # storage/paths.py:_frozen_windows_bundled_statcast_dir). A launcher
+    # that pre-sets the override would make these scripts always "pass"
+    # regardless of whether that auto-discovery actually works -- the same
+    # false-positive-testing bug this whole fix exists to close, but in the
+    # exact tool distributed to end users to verify the release
+    # (RELEASE-INFO.txt tells them to "abrir SELF TEST.bat primero").
     launcher = (ROOT / 'packaging/windows/MLB HR.bat').read_text(encoding='utf-8')
     selftest = (ROOT / 'packaging/windows/SELF TEST.bat').read_text(encoding='utf-8')
 
-    assert 'MLB_HR_DATA_DIR=%~dp0runtime_data' in launcher
-    assert '%MLB_HR_DATA_DIR%\\statcast' in launcher
+    assert 'MLB_HR_DATA_DIR' not in launcher
+    assert 'runtime_data\\statcast\\statcast_*.parquet' in launcher
     assert 'app.exe' in launcher
 
-    assert 'MLB_HR_DATA_DIR=%~dp0runtime_data' in selftest
+    assert 'MLB_HR_DATA_DIR' not in selftest
     assert '--self-test --require-runtime-data' in selftest
 
 
