@@ -30,7 +30,7 @@ def _build_v3_database_with_existing_combination(db_path: Path) -> None:
             )
 
 
-def test_packaged_migrations_directory_brings_a_v3_user_database_to_v4(tmp_path):
+def test_packaged_migrations_directory_brings_a_v3_user_database_to_current(tmp_path):
     db_path = tmp_path / "app.db"
     _build_v3_database_with_existing_combination(db_path)
 
@@ -50,16 +50,25 @@ def test_packaged_migrations_directory_brings_a_v3_user_database_to_v4(tmp_path)
 
     with store.connection() as con:
         applied_after = {r[0] for r in con.execute("SELECT version FROM schema_migrations")}
-        assert applied_after == {1, 2, 3, 4}
+        assert applied_after == {1, 2, 3, 4, 5}
         cols_after = {r[1] for r in con.execute("PRAGMA table_info(combinations)")}
         assert "filter_status" in cols_after
+        assert {"canonical_key", "slate_scope_key", "is_canonical", "superseded_by"} <= cols_after
+        assert {r[1] for r in con.execute("PRAGMA table_info(favorites)")}, "favorites table must exist after migration"
 
         row = con.execute(
-            "SELECT combination_id, filter_status FROM combinations WHERE combination_id=?",
+            "SELECT combination_id, filter_status, canonical_key, is_canonical FROM combinations WHERE combination_id=?",
             ("existing-combo-1",),
         ).fetchone()
         assert row is not None, "pre-existing user data must survive the migration"
         assert row["filter_status"] == "QUALIFIED"
+        # V1.2.0's backfill (migration 005) must reach this v3-origin row too --
+        # it has no legs (legs_json="[]"), so canonical_key is still computed
+        # deterministically (empty-but-present); slate_scope_key stays NULL
+        # (no leg game_time to resolve), so this row is never grouped by the
+        # recanonicalization pass and simply keeps its column default (true).
+        assert row["canonical_key"] is not None
+        assert row["is_canonical"] == 1
 
 
 def test_packaged_migrations_directory_matches_canonical_migrations_directory():

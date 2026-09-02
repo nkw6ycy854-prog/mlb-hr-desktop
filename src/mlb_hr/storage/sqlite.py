@@ -11,7 +11,7 @@ from typing import Any, Iterator
 from mlb_hr.domain.models import Combination, OddsQuote, Prediction, ResultRecord
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def utcnow_iso() -> str:
@@ -80,6 +80,14 @@ class SQLiteStore:
                 con.executescript(script)
                 con.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",(version,utcnow_iso()))
             con.commit()
+        if any(v==5 for v,_ in versions):
+            # canonical_key/slate_scope_key backfill (migration 005) is too
+            # complex for raw SQL (needs a predictions.game_time join + a
+            # per-leg min()) -- it lives here as an idempotent, storage-layer-
+            # only step. Never touches CombinationEngine.build() or
+            # save_combination(); safe to re-run on every startup.
+            from mlb_hr.services.canonical_combinations import CanonicalCombinationService
+            CanonicalCombinationService(self).backfill_and_recanonicalize()
 
     def _backup_before_migration(self) -> Path:
         backup=self.db_path.with_suffix(self.db_path.suffix+".pre_migration.bak")
