@@ -129,6 +129,20 @@ def test_data_status_shows_error_when_health_report_statcast_fails():
 
 # --- MainWindow wiring ---
 
+class _FakeStore:
+    # Centro de Estado's own cold-start ("SIN COMPROBAR AUN") behavior is
+    # covered exhaustively in test_status_center.py; this fake is only for
+    # MainWindow-level plumbing tests, so it reports as fully checked/OK.
+    def get_state(self, key, default=None):
+        if key == "last_mlb_feed_status":
+            return {"quality": "GREEN", "messages": []}
+        if key == "last_settlement_run":
+            return {"checked": 0, "updated": 0, "errors": 0}
+        if key == "last_selftest_passed":
+            return True
+        return default
+
+
 class DummyPage(QWidget):
     def __init__(self, *_):
         super().__init__()
@@ -172,7 +186,7 @@ def _main_window(monkeypatch):
     monkeypatch.setattr(mw, "CombinationsPageWidget", lambda *_: DummyGamesPage())
     monkeypatch.setattr(mw, "HistoryWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "SettingsWidget", lambda *_, **__: DummyPage())
-    return mw.MainWindow(object(), object())
+    return mw.MainWindow(object(), _FakeStore())
 
 
 def test_apply_health_report_refreshes_today_when_critical_ok(monkeypatch):
@@ -245,3 +259,44 @@ def test_apply_health_report_updates_sidebar_model_and_data_labels_when_error(mo
     w.apply_health_report(_report(False))
 
     assert "ERROR" in w.status_data.text()
+
+
+def test_status_center_indicator_reflects_sistema_ok(monkeypatch):
+    w = _main_window(monkeypatch)
+    all_ok = _report(True, items=(
+        HealthItem(key="model", label="Modelo", state="OK", detail="V1.0.0 validado."),
+        HealthItem(key="statcast", label="Statcast", state="OK", detail="Datos disponibles."),
+        HealthItem(key="database", label="Base de datos", state="OK", detail="Conexión OK."),
+        HealthItem(key="odds", label="Cuotas", state="OK", detail="Configurado."),
+    ))
+    w.apply_health_report(all_ok)
+    assert "SISTEMA OK" in w.status_center_btn.text()
+
+
+def test_status_center_indicator_reflects_requiere_atencion(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.apply_health_report(_report(False))
+    assert "REQUIERE ATENCION" in w.status_center_btn.text()
+
+
+def test_opening_status_center_is_not_a_main_nav_section(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.apply_health_report(_report(True))
+    w.set_page(1)
+
+    w.open_status_center()
+
+    assert w.pages.currentIndex() == 5
+    assert all(not btn.isChecked() for btn in w._nav_buttons)
+
+
+def test_closing_status_center_restores_the_previous_page(monkeypatch):
+    w = _main_window(monkeypatch)
+    w.apply_health_report(_report(True))
+    w.set_page(2)
+
+    w.open_status_center()
+    w.close_status_center()
+
+    assert w.pages.currentIndex() == 2
+    assert w._nav_buttons[2].isChecked() is True

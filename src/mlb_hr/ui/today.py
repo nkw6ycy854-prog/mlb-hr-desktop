@@ -137,8 +137,20 @@ class TodayWidget(QWidget):
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_dashboard(result)
         self._render_table()
+        self._persist_mlb_feed_status(result)
         if self.on_loaded:self.on_loaded(result)
         if self.settlement_trigger:self.settlement_trigger()
+
+    def _persist_mlb_feed_status(self,result:SlateResult)->None:
+        # Centro de Estado's "MLB Feed" (V1.2.0): reuses the result this
+        # exact analyze_slate() call already produced -- no new network call.
+        if not self.store:return
+        from datetime import datetime,timezone as _tz
+        self.store.set_state("last_mlb_feed_status",{
+            "at":datetime.now(_tz.utc).isoformat(),
+            "quality":result.slate_quality.value,
+            "messages":list(result.messages),
+        })
 
     def _render_dashboard(self,result:SlateResult)->None:
         self.dash_games.setText(f"Juegos {result.total_games}")

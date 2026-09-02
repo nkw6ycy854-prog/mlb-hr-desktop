@@ -87,6 +87,17 @@ class SettlementService:
             else:stats["waiting"]+=1
         combo_stats=self.reconcile_combinations()
         stats.update({f"combo_{k}":v for k,v in combo_stats.items()})
+        # Centro de Estado's "Ultimo settlement" (V1.2.0): pure bookkeeping,
+        # not new settlement logic -- persists the summary this method
+        # already computed so it survives past this single call for the
+        # status panel to read later. Every real trigger point (startup,
+        # post-ACTUALIZAR, ACTUALIZAR RESULTADOS) shares this one method.
+        self.store.set_state("last_settlement_run",{
+            "at":datetime.now(timezone.utc).isoformat(),
+            "checked":stats.get("checked",0),
+            "updated":stats.get("settled",0),
+            "errors":stats.get("errors",0),
+        })
         return stats
 
     def reconcile_combinations(self)->dict[str,int]:

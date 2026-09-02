@@ -84,12 +84,19 @@ class DummyToday(QWidget):
         self.health_report = report
 
 
+class _FakeStore:
+    def get_state(self, key, default=None):
+        return default
+
+
 def _main_window(monkeypatch):
     app()
     monkeypatch.setattr(mw, "TodayWidget", lambda *_: DummyToday())
+    monkeypatch.setattr(mw, "GamesPageWidget", lambda *_: DummyPage())
+    monkeypatch.setattr(mw, "CombinationsPageWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "HistoryWidget", lambda *_: DummyPage())
     monkeypatch.setattr(mw, "SettingsWidget", lambda *_, **__: DummyPage())
-    return mw.MainWindow(object(), object())
+    return mw.MainWindow(object(), _FakeStore())
 
 
 def test_settlement_trigger_callback_runs_once_health_is_ok(monkeypatch):

@@ -220,3 +220,14 @@ def test_new_session_starts_on_todos_filter_with_empty_search():
     widget = TodayWidget(object(), None)
     assert widget._active_filter == "TODOS"
     assert widget.search_box.text() == ""
+
+
+def test_loading_a_slate_persists_mlb_feed_status_for_status_center(tmp_path):
+    app()
+    store = _store(tmp_path)
+    widget = TodayWidget(object(), store)
+    widget._loaded(_slate([_card(0, 0.2)]))
+
+    status = store.get_state("last_mlb_feed_status")
+    assert status is not None
+    assert status["quality"] == "GREEN"

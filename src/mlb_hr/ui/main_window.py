@@ -13,12 +13,14 @@ from PySide6.QtWidgets import (
 )
 
 from mlb_hr import __version__
+from mlb_hr.services.status_center import build_status_center_report
 from mlb_hr.ui.combinations_page import CombinationsPageWidget
 from mlb_hr.ui.components import make_scroll_page
 from mlb_hr.ui.games_page import GamesPageWidget
 from mlb_hr.ui.history import HistoryWidget
 from mlb_hr.ui.presentation import data_health_ok
 from mlb_hr.ui.settings import SettingsWidget
+from mlb_hr.ui.status_center import StatusCenterPanel
 from mlb_hr.ui.today import TodayWidget
 
 
@@ -28,8 +30,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("MLB HR")
         self.resize(1180, 760)
         self.paths = paths
+        self.store = store
         self.health_retry_callback = None
         self.settlement_trigger_callback = None
+        self._last_health_report = None
+        self._page_before_status_center = 0
 
         self.today = TodayWidget(analysis_service, store)
         self.games_page = GamesPageWidget(store)
@@ -37,6 +42,8 @@ class MainWindow(QMainWindow):
         self.today.on_loaded = self._on_today_loaded
         self.history = HistoryWidget(store)
         self.settings = SettingsWidget(store, paths=paths)
+        self.status_center_panel = StatusCenterPanel()
+        self.status_center_panel.on_close = self.close_status_center
 
         self.pages = QStackedWidget()
         self.pages.addWidget(make_scroll_page(self.today))
@@ -44,6 +51,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.combinations_page)
         self.pages.addWidget(make_scroll_page(self.history))
         self.pages.addWidget(make_scroll_page(self.settings))
+        self.pages.addWidget(self.status_center_panel)
 
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
@@ -73,6 +81,13 @@ class MainWindow(QMainWindow):
         self.status_version.setObjectName("muted")
         for lbl in (self.status_model, self.status_data, self.status_version):
             sidebar_layout.addWidget(lbl)
+
+        # Centro de Estado is NOT a main nav section -- accessed only via
+        # this sidebar indicator, per the approved plan.
+        self.status_center_btn = QPushButton("● SISTEMA OK")
+        self.status_center_btn.setFlat(True)
+        self.status_center_btn.clicked.connect(self.open_status_center)
+        sidebar_layout.addWidget(self.status_center_btn)
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -108,7 +123,33 @@ class MainWindow(QMainWindow):
         self.games_page.render(result)
         self.combinations_page.render(result)
 
+    def open_status_center(self) -> None:
+        if self._last_health_report is None:
+            return
+        self._page_before_status_center = self.pages.currentIndex()
+        report = build_status_center_report(self._last_health_report, self.store)
+        self.status_center_panel.render(report)
+        self.pages.setCurrentIndex(5)
+        # An exclusive QButtonGroup refuses to let its last-checked button
+        # become unchecked (by design, it always keeps exactly one checked
+        # once any has been) -- Centro de Estado isn't a nav section, so no
+        # nav button should look active while it's open; toggling
+        # exclusivity off is the standard way to uncheck all of them.
+        self.nav_group.setExclusive(False)
+        for btn in self._nav_buttons:
+            btn.setChecked(False)
+        self.nav_group.setExclusive(True)
+
+    def close_status_center(self) -> None:
+        self.pages.setCurrentIndex(self._page_before_status_center)
+        for i, btn in enumerate(self._nav_buttons):
+            btn.setChecked(i == self._page_before_status_center)
+
     def apply_health_report(self, report) -> None:
+        self._last_health_report = report
+        status_report = build_status_center_report(report, self.store)
+        self.status_center_btn.setText(f"● {status_report.global_state}")
+        self.status_center_btn.setProperty("tone", "recomendado" if status_report.global_state == "SISTEMA OK" else "alto_riesgo")
         self._apply_sidebar_health(report)
         if hasattr(self.today, "apply_health_report"):
             self.today.apply_health_report(report)
