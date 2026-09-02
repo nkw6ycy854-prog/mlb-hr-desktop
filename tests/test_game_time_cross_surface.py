@@ -44,6 +44,15 @@ class _Store:
     def get_state(self, key, default=None):
         return default  # unset -> exercises the default timezone, not an explicit one
 
+    def connection(self):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _cm():
+            yield SimpleNamespace(execute=lambda *a, **k: SimpleNamespace(fetchone=lambda: None, fetchall=lambda: []))
+
+        return _cm()
+
 
 def _card() -> PredictionCard:
     player = PlayerRef(1, "Aaron Judge")

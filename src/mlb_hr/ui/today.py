@@ -5,23 +5,37 @@ from datetime import timezone
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView,QButtonGroup,QFrame,QHBoxLayout,QLabel,QLayout,QMessageBox,QPushButton,
+    QAbstractItemView,QButtonGroup,QFrame,QHBoxLayout,QLabel,QLayout,QLineEdit,QMessageBox,QPushButton,
     QScrollArea,QSizePolicy,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
 from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth
 from mlb_hr.domain.models import PredictionCard, SlateResult
+from mlb_hr.services.favorites import FavoriteAlreadyExists, FavoritesService
 from mlb_hr.services.game_time import GameTimeService
 from mlb_hr.services.game_views import GamePredictionViewBuilder
-from mlb_hr.ui.components import ResponsiveGrid
-from mlb_hr.ui.presentation import data_health_ok, display_quote, practical_status, quote_display, visible_cards
+from mlb_hr.ui.components import FeedbackButton, ResponsiveGrid
+from mlb_hr.ui.presentation import data_health_ok, display_quote, practical_status, quote_display, visible_cards, visual_state, visual_state_display
 from mlb_hr.ui.workers import FunctionWorker
+
+_FILTER_TODOS = "TODOS"
+_FILTER_GE5 = "GE5"
+_FILTER_RECOMENDADOS = "RECOMENDADOS"
+_FILTER_FAVORITOS = "FAVORITOS"
+
+_EMPTY_STATE_MESSAGES = {
+    _FILTER_GE5: "No hay jugadores con HR% ≥ 5% en este slate.",
+    _FILTER_RECOMENDADOS: "No hay jugadores RECOMENDADOS en este slate.",
+    _FILTER_FAVORITOS: "No hay favoritos para este slate.",
+}
 
 
 class TodayWidget(QWidget):
-    def __init__(self,analysis_service,store=None,parent=None)->None:
+    def __init__(self,analysis_service,store=None,parent=None,favorites_service=None)->None:
         super().__init__(parent);self.service=analysis_service;self.store=store;self.thread_pool=QThreadPool.globalInstance();self.current:SlateResult|None=None;self._cards:list[PredictionCard]=[]
         self._on_open_settings=None;self._on_retry=None;self.settlement_trigger=None
+        self.favorites_service=favorites_service or (FavoritesService(store) if store is not None else None)
+        self._active_filter=_FILTER_TODOS
         self._build()
 
     def _build(self)->None:
@@ -67,12 +81,40 @@ class TodayWidget(QWidget):
         # vertical scrolling instead of silently shrinking the page's content
         # (the detail panel's labels) below their own readable minimum height.
         top15_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-        sec_row=QHBoxLayout()
-        self.ranking_section_label=QLabel("MEJORES HR DEL DÍA");self.ranking_section_label.setObjectName("section");sec_row.addWidget(self.ranking_section_label);sec_row.addStretch()
-        self.expanded=False
-        self.view_all_btn=QPushButton("VER TODOS");self.view_all_btn.clicked.connect(self.toggle_all);sec_row.addWidget(self.view_all_btn)
-        top15_layout.addLayout(sec_row)
-        columns=["#","Jugador","HR%","Clasificación","Confianza","Mejor cuota","FanDuel","Estado"]
+
+        dash=QHBoxLayout()
+        self.dash_games=QLabel("Juegos —");self.dash_lineups=QLabel("Lineups —");self.dash_recommended=QLabel("Recomendados —")
+        self.dash_best_hr=QLabel("Mejor HR% —");self.dash_updated=QLabel("Sin actualizar")
+        for lbl in (self.dash_games,self.dash_lineups,self.dash_recommended,self.dash_best_hr,self.dash_updated):
+            lbl.setObjectName("muted");lbl.setWordWrap(True);dash.addWidget(lbl)
+        dash.addStretch()
+        top15_layout.addLayout(dash)
+
+        filter_row=QHBoxLayout()
+        self.ranking_section_label=QLabel("MEJORES HR DEL DÍA");self.ranking_section_label.setObjectName("section");filter_row.addWidget(self.ranking_section_label)
+        filter_row.addStretch()
+        self.filter_group=QButtonGroup(self);self.filter_group.setExclusive(True)
+        self.filter_todos_btn=QPushButton("Todos");self.filter_ge5_btn=QPushButton("≥5%")
+        self.filter_recomendados_btn=QPushButton("Recomendados");self.filter_favoritos_btn=QPushButton("★ Favoritos")
+        for btn,code in (
+            (self.filter_todos_btn,_FILTER_TODOS),(self.filter_ge5_btn,_FILTER_GE5),
+            (self.filter_recomendados_btn,_FILTER_RECOMENDADOS),(self.filter_favoritos_btn,_FILTER_FAVORITOS),
+        ):
+            btn.setCheckable(True);btn.clicked.connect(lambda _checked=False,c=code:self._set_filter(c))
+            self.filter_group.addButton(btn);filter_row.addWidget(btn)
+        self.filter_todos_btn.setChecked(True)
+        top15_layout.addLayout(filter_row)
+
+        search_row=QHBoxLayout()
+        self.search_box=QLineEdit();self.search_box.setPlaceholderText("Buscar jugador o equipo")
+        self.search_box.textChanged.connect(lambda _text:self._render_table())
+        search_row.addWidget(self.search_box)
+        top15_layout.addLayout(search_row)
+
+        self.empty_state_label=QLabel("");self.empty_state_label.setObjectName("muted");self.empty_state_label.setWordWrap(True);self.empty_state_label.hide()
+        top15_layout.addWidget(self.empty_state_label)
+
+        columns=["Jugador","Juego","HR%","Estado","Mejor cuota"]
         # Vertical policy Minimum (not Expanding): in single-column mode, main_pair's
         # grid gives row 0 (this table) its full sizeHint before row 1 (detail) gets
         # anything, so an Expanding table starves detail below its own minimum
@@ -116,8 +158,21 @@ class TodayWidget(QWidget):
         self.lineups.setText(f"{result.pregame_games} juegos pregame · {result.live_games} en vivo · {result.final_games} finalizados")
         self.updated.setText("Actualizado "+self._time_service().format_time(result.updated_at))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
+        self._render_dashboard(result)
         self._render_table();self._render_combos();self.render_game_views()
         if self.settlement_trigger:self.settlement_trigger()
+
+    def _render_dashboard(self,result:SlateResult)->None:
+        self.dash_games.setText(f"Juegos {result.total_games}")
+        self.dash_lineups.setText(f"Lineups confirmados {result.confirmed_lineups} / {result.total_games}")
+        recommended=sum(
+            1 for c in result.cards
+            if visual_state(c.prediction.classification,eligible=c.prediction.classification!=ModelClassification.NOT_ELIGIBLE)=="RECOMENDADO"
+        )
+        self.dash_recommended.setText(f"Picks recomendados {recommended}")
+        best=max((c.prediction.final_hr_probability for c in result.cards),default=None)
+        self.dash_best_hr.setText(f"Mejor HR% {best*100:.1f}%" if best is not None else "Mejor HR% —")
+        self.dash_updated.setText(self._time_service().format_time(result.updated_at))
 
     def _error(self,msg:str)->None:
         self.refresh_btn.setEnabled(True);self.status.setText("Error al actualizar");QMessageBox.warning(self,"Actualización",msg)
@@ -152,23 +207,87 @@ class TodayWidget(QWidget):
     def _handle_retry(self)->None:
         if self._on_retry:self._on_retry()
 
-    def toggle_all(self)->None:
-        self.expanded=not self.expanded
-        self.view_all_btn.setText("VER TOP 15" if self.expanded else "VER TODOS")
+    def _set_filter(self,code:str)->None:
+        self._active_filter=code
         self._render_table()
+
+    def _card_eligible(self,card:PredictionCard)->bool:
+        return card.prediction.classification!=ModelClassification.NOT_ELIGIBLE
+
+    def _card_visual_state(self,card:PredictionCard)->str:
+        return visual_state(card.prediction.classification,eligible=self._card_eligible(card))
+
+    def _favorited_identities(self)->set[tuple[int,int]]:
+        if not self.favorites_service:return set()
+        return {(int(f["player_id"]),int(f["game_pk"])) for f in self.favorites_service.list_favorites()}
+
+    def _filtered_cards(self)->list[PredictionCard]:
+        if not self.current:return []
+        all_cards=list(self.current.cards)
+        if self._active_filter==_FILTER_GE5:
+            base=[c for c in all_cards if c.prediction.final_hr_probability>=0.05]
+        elif self._active_filter==_FILTER_RECOMENDADOS:
+            base=[c for c in all_cards if self._card_visual_state(c)=="RECOMENDADO"]
+        elif self._active_filter==_FILTER_FAVORITOS:
+            identities=self._favorited_identities()
+            base=[c for c in all_cards if (c.prediction.player.player_id,c.prediction.game_pk) in identities]
+        else:
+            eligible=[c for c in all_cards if self._card_eligible(c)]
+            base=visible_cards(eligible,expanded=False)
+        return sorted(base,key=lambda c:c.prediction.final_hr_probability,reverse=True)
+
+    def _matching_cards_for_search(self,query:str)->list[PredictionCard]:
+        if not self.current:return []
+        q=query.strip().lower()
+        matched=[
+            c for c in self.current.cards
+            if q in c.prediction.player.full_name.lower()
+            or q in c.prediction.team_name.lower()
+            or q in c.prediction.opponent_name.lower()
+        ]
+        return sorted(matched,key=lambda c:c.prediction.final_hr_probability,reverse=True)
+
+    def _game_label(self,prediction)->str:
+        time_text=self._time_service().format_time(prediction.game_time)
+        game=None
+        if self.current:
+            game=next((g for g in self.current.game_contexts if g.game_pk==prediction.game_pk),None)
+        if game and game.away_team_abbr and game.home_team_abbr:
+            return f"{game.away_team_abbr} @ {game.home_team_abbr} · {time_text}"
+        return f"{prediction.team_name} vs {prediction.opponent_name} · {time_text}"
 
     def _render_table(self)->None:
         if not self.current:
-            self.table.setRowCount(0);self._cards=[];self._clear_detail();return
-        eligible=[c for c in self.current.cards if c.prediction.classification!=ModelClassification.NOT_ELIGIBLE]
-        cards=visible_cards(eligible,expanded=self.expanded)
+            self.table.setRowCount(0);self._cards=[];self._clear_detail();self.empty_state_label.hide();return
+
+        query=self.search_box.text().strip()
+        filtered=self._filtered_cards()
+        filtered_ids={c.prediction.prediction_id for c in filtered}
+        if query:
+            cards=self._matching_cards_for_search(query)
+        else:
+            cards=filtered
+
         self.table.setRowCount(len(cards));self._cards=cards
         for r,card in enumerate(cards):
             p=card.prediction
-            vals=[str(r+1),p.player.full_name,f"{p.final_hr_probability*100:.1f}%",p.classification.value,p.confidence_label.value,display_quote(card,best=True),display_quote(card,best=False),practical_status(p.classification)]
+            state=self._card_visual_state(card)
+            if query and p.prediction_id not in filtered_ids:
+                state=f"{state} · FUERA DEL FILTRO ACTIVO"
+            vals=[p.player.full_name,self._game_label(p),f"{p.final_hr_probability*100:.1f}%",state,display_quote(card,best=True)]
             for c,v in enumerate(vals):
-                item=QTableWidgetItem(v);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c!=1 else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft);self.table.setItem(r,c,item)
+                item=QTableWidgetItem(v);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c!=0 else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft);self.table.setItem(r,c,item)
         self.table.resizeColumnsToContents();self.table.horizontalHeader().setStretchLastSection(True)
+
+        if not cards:
+            if query:
+                self.empty_state_label.setText(f"No se encontraron jugadores ni equipos para \"{query}\".")
+            else:
+                self.empty_state_label.setText(_EMPTY_STATE_MESSAGES.get(self._active_filter,"No hay jugadores para mostrar."))
+            self.empty_state_label.show()
+        else:
+            self.empty_state_label.hide()
+
         if cards:self.table.selectRow(0);self._show_detail(cards[0])
         else:self._clear_detail()
 
@@ -188,11 +307,11 @@ class TodayWidget(QWidget):
     def _show_detail(self,card:PredictionCard)->None:
         self._wipe_detail();p=card.prediction;m=card.market
         title=QLabel(p.player.full_name);title.setObjectName("section");self.detail_layout.addWidget(title)
-        time_text=self._time_service().format_time(p.game_time)
-        game=QLabel(f"{p.team_name} vs {p.opponent_name} · {time_text}");game.setObjectName("muted");self.detail_layout.addWidget(game)
+        game=QLabel(self._game_label(p));game.setObjectName("muted");self.detail_layout.addWidget(game)
         prob=QLabel(f"HR%\n{p.final_hr_probability*100:.1f}%");prob.setAlignment(Qt.AlignmentFlag.AlignCenter);prob.setStyleSheet("font-size:20px;font-weight:700;padding:10px;");self.detail_layout.addWidget(prob)
-        status=practical_status(p.classification)
-        conf=QLabel(f"{status} · {p.classification.value} · {p.confidence_label.value} CONFIANZA");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setObjectName("good" if status=="RECOMENDADO" else "warning");self.detail_layout.addWidget(conf)
+        status=self._card_visual_state(card)
+        icon,tone=visual_state_display(status)
+        conf=QLabel(f"{icon} {status} · {p.classification.value} · {p.confidence_label.value} CONFIANZA");conf.setAlignment(Qt.AlignmentFlag.AlignCenter);conf.setProperty("tone",tone);self.detail_layout.addWidget(conf)
         qd=quote_display(card)
         best=QLabel(qd.best_text);best.setAlignment(Qt.AlignmentFlag.AlignCenter);self.detail_layout.addWidget(best)
         if qd.fanduel_text:
@@ -217,8 +336,67 @@ class TodayWidget(QWidget):
             apply_btn.clicked.connect(apply)
             self.detail_layout.addWidget(manual)
 
-        self.copy_btn=QPushButton("COPIAR PICK");self.copy_btn.clicked.connect(lambda:self.copy_pick(card));self.detail_layout.addWidget(self.copy_btn)
+        buttons=QHBoxLayout()
+        self.copy_btn=FeedbackButton("COPIAR");self.copy_btn.clicked.connect(lambda:self.copy_pick(card));buttons.addWidget(self.copy_btn)
+        favorited=bool(self.favorites_service and self.favorites_service.get_favorite(player_id=p.player.player_id,game_pk=p.game_pk))
+        self.favorite_btn=QPushButton("★ GUARDADO" if favorited else "GUARDAR PICK")
+        self.favorite_btn.setEnabled(self.favorites_service is not None)
+        self.favorite_btn.clicked.connect(lambda:self._toggle_favorite(card))
+        buttons.addWidget(self.favorite_btn)
+        self.detail_layout.addLayout(buttons)
+
+        self._analysis_expanded=getattr(self,"_analysis_expanded",False)
+        self.analysis_btn=QPushButton("OCULTAR ANÁLISIS COMPLETO" if self._analysis_expanded else "VER ANÁLISIS COMPLETO")
+        self.analysis_btn.clicked.connect(lambda:self._toggle_analysis(card))
+        self.detail_layout.addWidget(self.analysis_btn)
+        if self._analysis_expanded:
+            self._render_full_analysis(p)
+
         self.detail_layout.addStretch()
+
+    def _toggle_analysis(self,card:PredictionCard)->None:
+        self._analysis_expanded=not getattr(self,"_analysis_expanded",False)
+        self._show_detail(card)
+
+    def _render_full_analysis(self,p)->None:
+        # Reorganizes/surfaces the same explanatory data V1.1.0 already
+        # produces -- never reinterprets it or invents new reasons.
+        block=QLabel(
+            "ANÁLISIS COMPLETO\n"
+            f"Integridad: {p.integrity.value}\n"
+            f"Revisión (critic): {p.critic.value}\n"
+            f"Acción del modelo: {p.user_action.value}\n"
+            f"Modelo {p.model_version} · Features {p.feature_version} · Calibración {p.calibration_version} · Quality gate {p.quality_gate_version}\n"
+            +("\n".join(f"⚠ {w.message}" for w in p.warnings) if p.warnings else "Sin advertencias adicionales.")
+        )
+        block.setWordWrap(True);self.detail_layout.addWidget(block)
+
+    def _toggle_favorite(self,card:PredictionCard)->None:
+        if not self.favorites_service:return
+        p=card.prediction
+        existing=self.favorites_service.get_favorite(player_id=p.player.player_id,game_pk=p.game_pk)
+        if existing:
+            reply=QMessageBox.question(self,"Eliminar de favoritos",f"¿Eliminar a {p.player.full_name} de Favoritos?")
+            if reply==QMessageBox.StandardButton.Yes:
+                self.favorites_service.remove_favorite(player_id=p.player.player_id,game_pk=p.game_pk)
+        else:
+            best_quote=card.best_market.quote if card.best_market else None
+            fanduel_quote=card.market.quote if card.market else None
+            try:
+                self.favorites_service.save_favorite(
+                    player_id=p.player.player_id,game_pk=p.game_pk,player_name=p.player.full_name,
+                    team_name=p.team_name,opponent_name=p.opponent_name,game_time=p.game_time,
+                    hr_probability=p.final_hr_probability,practical_status=self._card_visual_state(card),
+                    classification=p.classification.value,confidence_label=p.confidence_label.value,
+                    eligible=self._card_eligible(card),
+                    best_bookmaker=best_quote.bookmaker if best_quote else None,
+                    best_american_odds=best_quote.american_odds if best_quote else None,
+                    fanduel_american_odds=fanduel_quote.american_odds if fanduel_quote else None,
+                    source_prediction_id=p.prediction_id,
+                )
+            except FavoriteAlreadyExists:
+                pass
+        self._show_detail(card)
 
     def copy_pick(self,card:PredictionCard)->None:
         p=card.prediction;m=card.market
@@ -226,8 +404,7 @@ class TodayWidget(QWidget):
         if m.quote and m.quote.american_odds is not None:
             text+=f" | FanDuel {m.quote.american_odds:+d}"
         QGuiApplication.clipboard().setText(text)
-        self.copy_btn.setText("COPIADO ✓")
-        QTimer.singleShot(1500,lambda:self.copy_btn.setText("COPIAR PICK"))
+        self.copy_btn.show_feedback("COPIADO")
 
     def _render_combos(self)->None:
         for frame in self._combo_frames:frame.deleteLater()

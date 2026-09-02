@@ -104,7 +104,7 @@ def _combo_frame_texts(widget) -> str:
     return "\n".join(texts)
 
 
-def test_today_defaults_to_top_15_and_can_expand():
+def test_today_defaults_to_top_15_under_the_todos_filter():
     app()
     widget = TodayWidget(_make_service(), None)
     cards = [_make_card(i, 1 - i / 100) for i in range(20)]
@@ -119,12 +119,24 @@ def test_today_defaults_to_top_15_and_can_expand():
     )
     widget._loaded(result)
 
+    assert widget.filter_todos_btn.isChecked() is True
     assert widget.table.rowCount() == 15
-    assert widget.view_all_btn.text() == "VER TODOS"
-    widget.toggle_all()
+    assert widget.table.horizontalHeaderItem(3).text() == "Estado"
+
+
+def test_ge5_filter_searches_the_whole_slate_beyond_top_15():
+    app()
+    widget = TodayWidget(_make_service(), None)
+    cards = [_make_card(i, 0.20 - i * 0.005) for i in range(20)]  # all >= 0.05
+    result = SlateResult(
+        cards=cards, combinations=[], slate_quality=SlateQuality.GREEN, model_health=ModelHealth.GREEN,
+        confirmed_lineups=15, total_games=15, updated_at=datetime.now(timezone.utc),
+    )
+    widget._loaded(result)
+
+    widget.filter_ge5_btn.click()
+
     assert widget.table.rowCount() == 20
-    assert widget.view_all_btn.text() == "VER TOP 15"
-    assert widget.table.horizontalHeaderItem(7).text() == "Estado"
 
 
 def test_today_shows_watch_and_no_bet_when_no_primary_secondary_exist():
@@ -158,8 +170,8 @@ def test_today_shows_watch_and_no_bet_when_no_primary_secondary_exist():
     # 3 visible rows: the WATCH/WATCH/NO_BET cards. The NOT_ELIGIBLE card is the
     # only one allowed to be excluded.
     assert widget.table.rowCount() == 3
-    statuses = {widget.table.item(r, 7).text() for r in range(widget.table.rowCount())}
-    assert statuses == {"VIGILAR", "NO CUMPLE FILTRO"}
+    statuses = {widget.table.item(r, 3).text() for r in range(widget.table.rowCount())}
+    assert statuses == {"VIGILAR", "ALTO RIESGO"}
     assert "NO HAY PICKS HR CALIFICADOS ENTRE LOS JUEGOS CONFIRMADOS" in widget.banner.text()
 
 
@@ -199,7 +211,7 @@ def test_copy_pick_shows_confirmation_and_resets():
     button = widget.copy_btn
     button.click()
 
-    assert button.text() == "COPIADO ✓"
+    assert button.text() == "COPIADO"
     assert "HR" in QApplication.clipboard().text()
 
 

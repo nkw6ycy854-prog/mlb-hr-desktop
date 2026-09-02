@@ -50,6 +50,62 @@ class _FakeStore:
             "legs_json": json.dumps(legs), "filter_status": "QUALIFIED",
             "won": 1, "profit_loss": 30.0, "estimated_decimal_odds": 3.2,
         }]
+        self._favorites: dict[tuple[int, int], dict] = {}
+
+    def connection(self):
+        return self._favorites_cursor()
+
+    def transaction(self):
+        return self._favorites_cursor()
+
+    def _favorites_cursor(self):
+        from contextlib import contextmanager
+
+        store = self
+
+        class _Cursor:
+            def execute(self, sql, params=()):
+                if sql.startswith("INSERT INTO favorites"):
+                    (fav_id, player_id, game_pk, created_at, player_name, team_name, opponent_name,
+                     game_time, hr_prob, status, classification, confidence, eligible, best_book,
+                     best_odds, fanduel_odds, source_pred, _op_status) = params
+                    key = (player_id, game_pk)
+                    if key in store._favorites:
+                        import sqlite3
+                        raise sqlite3.IntegrityError("UNIQUE constraint failed")
+                    store._favorites[key] = {
+                        "favorite_id": fav_id, "player_id": player_id, "game_pk": game_pk,
+                        "created_at": created_at, "player_name": player_name,
+                        "snapshot_hr_probability": hr_prob, "snapshot_practical_status": status,
+                    }
+                elif sql.startswith("DELETE FROM favorites"):
+                    store._favorites.pop(tuple(params), None)
+                elif sql.startswith("SELECT * FROM favorites WHERE"):
+                    row = store._favorites.get(tuple(params))
+                    return _Result(row)
+                elif sql.startswith("SELECT * FROM favorites ORDER"):
+                    return _Result(None, list(store._favorites.values()))
+                return _Result(None)
+
+        class _Result:
+            def __init__(self, row, rows=None):
+                self._row = row
+                self._rows = rows or []
+
+            def fetchone(self):
+                return self._row
+
+            def fetchall(self):
+                return self._rows
+
+            def __iter__(self):
+                return iter(self._rows)
+
+        @contextmanager
+        def _cm():
+            yield _Cursor()
+
+        return _cm()
 
     def history_prediction_rows(self, limit=2000):
         return list(self.player_rows)
