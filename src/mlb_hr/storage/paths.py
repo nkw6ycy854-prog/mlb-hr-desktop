@@ -84,6 +84,23 @@ def _legacy_statcast_dirs() -> list[Path]:
     return [xdg_data / "statcast", xdg_data / "MLBHR" / "statcast"]
 
 
+def _running_as_compiled_binary() -> bool:
+    """True only inside a real compiled/frozen build.
+
+    sys.frozen is the PyInstaller/cx_Freeze convention -- Nuitka (what
+    pyside6-deploy actually uses to build app.exe) does NOT set it. Nuitka's
+    real signal is a module-level __compiled__ global it injects into every
+    compiled module, including this one. An earlier version of this check
+    assumed sys.frozen covered Nuitka too; the CI gate's real app.exe
+    self-test proved that false -- parquet_dir kept resolving to the plain
+    LocalAppData path even with runtime_data/statcast present next to the
+    exe, because getattr(sys, "frozen", False) was always False for a real
+    Nuitka build. sys.frozen is still checked as a harmless defensive
+    fallback in case the build tool ever changes.
+    """
+    return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+
+
 def _frozen_windows_bundled_statcast_dir() -> Path | None:
     """The Windows FULL release ships real Statcast parquet at
     <bundle_dir>/runtime_data/statcast, right next to app.exe (see
@@ -96,14 +113,13 @@ def _frozen_windows_bundled_statcast_dir() -> Path | None:
 
     Auto-discovers that location with zero environment variables and
     without ever copying the parquet files anywhere -- reads them in
-    place. Only fires for a genuinely frozen Windows build (sys.frozen is
-    set by both PyInstaller and Nuitka's standalone/onefile modes, which
-    is what pyside6-deploy uses) with real data actually present; never on
+    place. Only fires for a genuinely compiled Windows build (see
+    _running_as_compiled_binary) with real data actually present; never on
     a source-mode run, never on another platform, never fabricated.
     """
     if platform.system() != "Windows":
         return None
-    if not getattr(sys, "frozen", False):
+    if not _running_as_compiled_binary():
         return None
     candidate = Path(sys.executable).parent / "runtime_data" / "statcast"
     return candidate if _has_statcast_data(candidate) else None

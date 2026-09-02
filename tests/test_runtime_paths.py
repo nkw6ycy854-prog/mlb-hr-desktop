@@ -53,8 +53,38 @@ def test_runtime_reuses_unscoped_legacy_statcast_when_canonical_is_empty(monkeyp
 # never find its own bundled data. The self-test that shipped with v1.2.0
 # only passed because windows_full_package.py's gate injected
 # MLB_HR_DATA_DIR as an env override, which a real end user never sets.
+#
+# These tests use __compiled__ (a module-level global Nuitka injects into
+# every compiled module) to simulate a real compiled build, since that is
+# what pyside6-deploy actually produces. An earlier version of this fix used
+# sys.frozen instead -- the PyInstaller/cx_Freeze convention -- which Nuitka
+# does NOT set; the real CI gate's app.exe self-test caught this exact gap
+# (parquet_dir kept resolving to plain LocalAppData on the real binary).
+# sys.frozen is still honored as a defensive fallback -- see the dedicated
+# test below -- in case the build tool ever changes.
 
 def test_frozen_windows_build_auto_discovers_bundled_statcast_next_to_executable(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    _fake_windows(monkeypatch, home, localappdata=tmp_path / "AppData" / "Local")
+    bundle_dir = tmp_path / "bundle"
+    exe_path = bundle_dir / "app.exe"
+    bundle_dir.mkdir(parents=True)
+    parquet = bundle_dir / "runtime_data" / "statcast" / "season=2024" / "month=04" / "statcast_2024-04-01.parquet"
+    parquet.parent.mkdir(parents=True)
+    parquet.write_bytes(b"parquet-placeholder")
+    monkeypatch.setattr(paths.sys, "executable", str(exe_path))
+    monkeypatch.setattr(paths, "__compiled__", object(), raising=False)
+
+    resolved = paths.resolve_app_paths()
+
+    assert resolved.parquet_dir == bundle_dir / "runtime_data" / "statcast"
+
+
+def test_sys_frozen_alone_also_triggers_bundled_statcast_discovery(monkeypatch, tmp_path):
+    # Defensive fallback: if a future build tool sets sys.frozen (the
+    # PyInstaller/cx_Freeze convention) instead of Nuitka's __compiled__,
+    # discovery must still work. Not exercised by the real pyside6-deploy
+    # build today, but kept honest and covered.
     home = tmp_path / "home"
     _fake_windows(monkeypatch, home, localappdata=tmp_path / "AppData" / "Local")
     bundle_dir = tmp_path / "bundle"
@@ -85,7 +115,7 @@ def test_frozen_windows_build_keeps_data_db_cache_logs_in_normal_user_locations(
     parquet.parent.mkdir(parents=True)
     parquet.write_bytes(b"parquet-placeholder")
     monkeypatch.setattr(paths.sys, "executable", str(exe_path))
-    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paths, "__compiled__", object(), raising=False)
 
     resolved = paths.resolve_app_paths()
 
@@ -105,7 +135,7 @@ def test_mlb_hr_data_dir_override_still_wins_over_the_bundled_directory(monkeypa
     parquet.parent.mkdir(parents=True)
     parquet.write_bytes(b"placeholder")
     monkeypatch.setattr(paths.sys, "executable", str(exe_path))
-    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paths, "__compiled__", object(), raising=False)
     override = tmp_path / "explicit-override"
     monkeypatch.setenv("MLB_HR_DATA_DIR", str(override))
 
@@ -125,7 +155,7 @@ def test_frozen_windows_build_without_bundled_data_falls_back_to_localappdata(mo
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir(parents=True)
     monkeypatch.setattr(paths.sys, "executable", str(bundle_dir / "app.exe"))
-    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paths, "__compiled__", object(), raising=False)
 
     resolved = paths.resolve_app_paths()
 
