@@ -219,18 +219,20 @@ def main() -> int:
         window.today._loaded(slate)
         app.processEvents()
 
-        # HOY: TOP 15 default, POR PARTIDOS switch
-        result["today_top15"] = window.today.view_stack.currentIndex() == 0
-        window.today.by_games_btn.click()
+        # HOY: TOP 15 is the whole page now (POR PARTIDOS lives on its own
+        # sidebar page), real rows rendered.
+        result["today_top15"] = window.pages.currentIndex() == 0 and window.today.table.rowCount() > 0
+
+        window.nav_games.click()
         app.processEvents()
-        result["today_by_games"] = window.today.view_stack.currentIndex() == 1
+        result["today_by_games"] = window.pages.currentIndex() == 1 and len(window.games_page._cards) > 0
 
         # canonical time: the same GAME_TIME must render identically in POR
-        # PARTIDOS and the ranking detail panel.
+        # PARTIDOS's (collapsed) card header and the ranking detail panel.
         por_partidos_texts = "\n".join(
-            l.text() for l in window.today.games_page.findChildren(QLabel)
-        ) + "\n".join(b.text() for b in window.today.games_page.findChildren(QPushButton))
-        window.today.top15_btn.click()
+            l.text() for l in window.games_page.findChildren(QLabel)
+        ) + "\n".join(b.text() for b in window.games_page.findChildren(QPushButton))
+        window.nav_today.click()
         app.processEvents()
         window.today.table.selectRow(0)
         window.today._select_row(0, 0)
@@ -283,7 +285,7 @@ def main() -> int:
         app.processEvents()
         settings = window.settings
         result["settings"] = (
-            window.pages.currentIndex() == 2
+            window.pages.currentIndex() == 3
             and hasattr(settings, "stake") and hasattr(settings, "stake_custom")
             and hasattr(settings, "timezone") and not hasattr(settings, "density")
         )

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from mlb_hr import __version__
 from mlb_hr.ui.components import make_scroll_page
+from mlb_hr.ui.games_page import GamesPageWidget
 from mlb_hr.ui.history import HistoryWidget
 from mlb_hr.ui.presentation import data_health_ok
 from mlb_hr.ui.settings import SettingsWidget
@@ -30,11 +31,14 @@ class MainWindow(QMainWindow):
         self.settlement_trigger_callback = None
 
         self.today = TodayWidget(analysis_service, store)
+        self.games_page = GamesPageWidget(store)
+        self.today.on_loaded = self.games_page.render
         self.history = HistoryWidget(store)
         self.settings = SettingsWidget(store, paths=paths)
 
         self.pages = QStackedWidget()
         self.pages.addWidget(make_scroll_page(self.today))
+        self.pages.addWidget(self.games_page)
         self.pages.addWidget(make_scroll_page(self.history))
         self.pages.addWidget(make_scroll_page(self.settings))
 
@@ -49,9 +53,10 @@ class MainWindow(QMainWindow):
         self.nav_group.setExclusive(True)
 
         self.nav_today = self._make_nav_button("Hoy", 0)
-        self.nav_history = self._make_nav_button("Historial", 1)
-        self.nav_settings = self._make_nav_button("Ajustes", 2)
-        self._nav_buttons = (self.nav_today, self.nav_history, self.nav_settings)
+        self.nav_games = self._make_nav_button("Por Partidos", 1)
+        self.nav_history = self._make_nav_button("Historial", 2)
+        self.nav_settings = self._make_nav_button("Ajustes", 3)
+        self._nav_buttons = (self.nav_today, self.nav_games, self.nav_history, self.nav_settings)
         for btn in self._nav_buttons:
             sidebar_layout.addWidget(btn)
         sidebar_layout.addStretch()
@@ -92,7 +97,7 @@ class MainWindow(QMainWindow):
         # actual click, so the sidebar has to be synced here explicitly.
         for i, btn in enumerate(self._nav_buttons):
             btn.setChecked(i == index)
-        if index == 1:
+        if index == 2:
             self.history.refresh()
 
     def apply_health_report(self, report) -> None:
@@ -108,7 +113,7 @@ class MainWindow(QMainWindow):
         else:
             self.today.show_health_failure(
                 report,
-                on_open_settings=lambda: self.set_page(2),
+                on_open_settings=lambda: self.set_page(3),
                 on_retry=lambda: self.health_retry_callback() if self.health_retry_callback else None,
             )
 

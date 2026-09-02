@@ -20,6 +20,7 @@ class PlayerGameView:
     practical_status: str
     eligible: bool
     card: PredictionCard | None
+    batting_order: int
 
 
 @dataclass(frozen=True)
@@ -63,13 +64,15 @@ class GamePredictionViewBuilder:
     ) -> TeamGameView:
         if lineup is None:
             return TeamGameView(team_name="", lineup_confirmed=False, players=())
-        players = [self._player_view(entry, game_pk, cards_by_player) for entry in lineup.entries]
-        valid = sorted(
-            (p for p in players if p.eligible), key=lambda p: p.hr_probability or -1, reverse=True,
+        # V1.2.0: real batting order 1-9, not an HR%-ranked/eligible-first
+        # presentation -- a pure display-order change, never touches which
+        # players are included or any predictive value.
+        players = sorted(
+            (self._player_view(entry, game_pk, cards_by_player) for entry in lineup.entries),
+            key=lambda p: p.batting_order,
         )
-        ineligible = [p for p in players if not p.eligible]
         return TeamGameView(
-            team_name=lineup.team_name, lineup_confirmed=lineup.confirmed, players=tuple(valid + ineligible),
+            team_name=lineup.team_name, lineup_confirmed=lineup.confirmed, players=tuple(players),
         )
 
     def _player_view(
@@ -83,12 +86,13 @@ class GamePredictionViewBuilder:
                 player_id=entry.player.player_id, player_name=entry.player.full_name,
                 hr_probability=pred.final_hr_probability, classification=pred.classification.value,
                 confidence=pred.confidence_label.value, practical_status=practical_status(pred.classification),
-                eligible=True, card=card,
+                eligible=True, card=card, batting_order=entry.batting_order,
             )
         return PlayerGameView(
             player_id=entry.player.player_id, player_name=entry.player.full_name,
             hr_probability=None, classification=ModelClassification.NOT_ELIGIBLE.value,
             confidence="—", practical_status=_INELIGIBLE_PRACTICAL_STATUS, eligible=False, card=None,
+            batting_order=entry.batting_order,
         )
 
     @staticmethod

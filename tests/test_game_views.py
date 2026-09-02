@@ -66,7 +66,10 @@ def _game(
     )
 
 
-def test_players_within_a_team_sort_by_hr_probability_descending():
+def test_players_within_a_team_sort_by_real_batting_order_not_hr_probability():
+    # V1.2.0 POR PARTIDOS requirement: real batting order 1-9, not HR% rank.
+    # Entry order here is deliberately NOT HR%-descending, to prove the sort
+    # key changed -- if this still sorted by HR%, "High" would come first.
     game = _game(
         1, away_confirmed=True, home_confirmed=True,
         away_entries=[_entry(1, "Low", 1), _entry(2, "High", 2), _entry(3, "Mid", 3)],
@@ -82,7 +85,33 @@ def test_players_within_a_team_sort_by_hr_probability_descending():
     views = GamePredictionViewBuilder().build(slate, "America/Santo_Domingo")
 
     names = [p.player_name for p in views[0].away.players]
-    assert names == ["High", "Mid", "Low"]
+    assert names == ["Low", "High", "Mid"]
+    orders = [p.batting_order for p in views[0].away.players]
+    assert orders == [1, 2, 3]
+    # Reordering must never touch the underlying predictive values.
+    by_name = {p.player_name: p for p in views[0].away.players}
+    assert by_name["High"].hr_probability == 0.20
+    assert by_name["High"].classification == "PRIMARY"
+    assert by_name["Low"].hr_probability == 0.05
+    assert by_name["Mid"].classification == "SECONDARY"
+
+
+def test_ineligible_player_with_an_early_batting_order_is_not_pushed_to_the_bottom():
+    game = _game(
+        1, away_confirmed=True, home_confirmed=True,
+        away_entries=[_entry(1, "IneligibleLeadoff", 1), _entry(2, "Eligible", 2)],
+    )
+    cards = [
+        _card(1, "IneligibleLeadoff", 1, 0.03, ModelClassification.NOT_ELIGIBLE),
+        _card(2, "Eligible", 1, 0.20, ModelClassification.PRIMARY),
+    ]
+    slate = SlateResult([], [], None, None, 1, 1, datetime.now(timezone.utc), game_contexts=(game,))
+    slate.cards = cards
+
+    views = GamePredictionViewBuilder().build(slate, "America/Santo_Domingo")
+
+    names = [p.player_name for p in views[0].away.players]
+    assert names == ["IneligibleLeadoff", "Eligible"]
 
 
 def test_game_with_only_one_lineup_confirmed_is_not_ready():

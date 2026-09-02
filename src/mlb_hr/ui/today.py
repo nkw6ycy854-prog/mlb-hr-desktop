@@ -6,14 +6,13 @@ from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,QButtonGroup,QFrame,QHBoxLayout,QLabel,QLayout,QLineEdit,QMessageBox,QPushButton,
-    QScrollArea,QSizePolicy,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
+    QScrollArea,QSizePolicy,QSpinBox,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 )
 
 from mlb_hr.domain.enums import CombinationFilterStatus, ModelClassification, ModelHealth
 from mlb_hr.domain.models import PredictionCard, SlateResult
 from mlb_hr.services.favorites import FavoriteAlreadyExists, FavoritesService
 from mlb_hr.services.game_time import GameTimeService
-from mlb_hr.services.game_views import GamePredictionViewBuilder
 from mlb_hr.ui.components import FeedbackButton, ResponsiveGrid
 from mlb_hr.ui.presentation import data_health_ok, display_quote, practical_status, quote_display, visible_cards, visual_state, visual_state_display
 from mlb_hr.ui.workers import FunctionWorker
@@ -33,7 +32,7 @@ _EMPTY_STATE_MESSAGES = {
 class TodayWidget(QWidget):
     def __init__(self,analysis_service,store=None,parent=None,favorites_service=None)->None:
         super().__init__(parent);self.service=analysis_service;self.store=store;self.thread_pool=QThreadPool.globalInstance();self.current:SlateResult|None=None;self._cards:list[PredictionCard]=[]
-        self._on_open_settings=None;self._on_retry=None;self.settlement_trigger=None
+        self._on_open_settings=None;self._on_retry=None;self.settlement_trigger=None;self.on_loaded=None
         self.favorites_service=favorites_service or (FavoritesService(store) if store is not None else None)
         self._active_filter=_FILTER_TODOS
         self._build()
@@ -63,16 +62,6 @@ class TodayWidget(QWidget):
         self.health_retry_btn=QPushButton("REINTENTAR");self.health_retry_btn.setObjectName("primaryButton");self.health_retry_btn.clicked.connect(self._handle_retry);hf_buttons.addWidget(self.health_retry_btn)
         hf_layout.addLayout(hf_buttons)
         root.addWidget(self.health_failure_frame)
-
-        self.nav_row_widget=QWidget();nav_row=QHBoxLayout(self.nav_row_widget);nav_row.setContentsMargins(0,0,0,0)
-        self.nav_group=QButtonGroup(self);self.nav_group.setExclusive(True)
-        self.top15_btn=QPushButton("TOP 15");self.top15_btn.setObjectName("navButton");self.top15_btn.setCheckable(True);self.top15_btn.setChecked(True);self.top15_btn.clicked.connect(lambda:self.view_stack.setCurrentIndex(0));nav_row.addWidget(self.top15_btn)
-        self.by_games_btn=QPushButton("POR PARTIDOS");self.by_games_btn.setObjectName("navButton");self.by_games_btn.setCheckable(True);self.by_games_btn.clicked.connect(lambda:self.view_stack.setCurrentIndex(1));nav_row.addWidget(self.by_games_btn)
-        for btn in (self.top15_btn,self.by_games_btn):self.nav_group.addButton(btn)
-        nav_row.addStretch()
-        root.addWidget(self.nav_row_widget)
-
-        self.view_stack=QStackedWidget();root.addWidget(self.view_stack,1)
 
         top15_page=QWidget();top15_layout=QVBoxLayout(top15_page);top15_layout.setContentsMargins(0,0,0,0);top15_layout.setSpacing(14)
         # SetMinimumSize makes this layout push its true minimum height up onto
@@ -125,23 +114,13 @@ class TodayWidget(QWidget):
         self.main_pair=ResponsiveGrid(two_column_min_width=980);self.main_pair.set_widgets([self.table,self.detail]);self.main_pair.layout().setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize);top15_layout.addWidget(self.main_pair,1)
         self.combo_section_label=QLabel("COMBINACIONES");self.combo_section_label.setObjectName("section");top15_layout.addWidget(self.combo_section_label)
         self.combo_grid=ResponsiveGrid(two_column_min_width=760);self._combo_frames:list[QFrame]=[];top15_layout.addWidget(self.combo_grid)
-        # QStackedWidget sizes itself to fit the largest minimum-size demand among
-        # ALL of its pages, not just the current one -- without this wrapper, once
-        # the detail panel is populated with real content, its natural (unwrapped)
-        # width leaks into view_stack's shared floor and prevents POR PARTIDOS from
-        # shrinking on a compact window even though its own content needs far less
-        # space. Wrapping each page in its own QScrollArea (same pattern already
-        # used for games_page below, and for every top-level page via
-        # components.make_scroll_page) isolates that floor per page.
-        top15_scroll=QScrollArea();top15_scroll.setWidgetResizable(True);top15_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        top15_scroll.setWidget(top15_page)
-        self.view_stack.addWidget(top15_scroll)
-
-        self.games_page=QScrollArea();self.games_page.setWidgetResizable(True)
-        games_container=QWidget();self.games_layout=QVBoxLayout(games_container);self.games_layout.setContentsMargins(0,0,0,0);self.games_layout.addStretch()
-        self.games_page.setWidget(games_container)
-        self.view_stack.addWidget(self.games_page)
-        self._game_frames:list[QFrame]=[]
+        # POR PARTIDOS now lives in its own top-level page (games_page.py);
+        # this QScrollArea wrapper still isolates TOP 15's own minimum-size
+        # floor from the rest of MainWindow's pages (same pattern used by
+        # every top-level page via components.make_scroll_page).
+        self.top15_scroll=QScrollArea();self.top15_scroll.setWidgetResizable(True);self.top15_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.top15_scroll.setWidget(top15_page)
+        root.addWidget(self.top15_scroll,1)
 
     def refresh(self)->None:
         self.refresh_btn.setEnabled(False);self.status.setText("Verificando lineups · SP · clima · modelo…")
@@ -159,7 +138,8 @@ class TodayWidget(QWidget):
         self.updated.setText("Actualizado "+self._time_service().format_time(result.updated_at))
         self.banner.setText(" · ".join(result.messages));self.banner.setVisible(bool(result.messages));self.banner.setObjectName("warning" if result.messages else "muted")
         self._render_dashboard(result)
-        self._render_table();self._render_combos();self.render_game_views()
+        self._render_table();self._render_combos()
+        if self.on_loaded:self.on_loaded(result)
         if self.settlement_trigger:self.settlement_trigger()
 
     def _render_dashboard(self,result:SlateResult)->None:
@@ -191,15 +171,11 @@ class TodayWidget(QWidget):
         detail_text=first.detail if first else "Se detectó un problema crítico de runtime."
         self.health_title.setText(title_text);self.health_detail.setText(detail_text)
         self.health_failure_frame.setVisible(True)
-        self.ranking_section_label.setVisible(False);self.main_pair.setVisible(False)
-        self.combo_section_label.setVisible(False);self.combo_grid.setVisible(False)
-        self.nav_row_widget.setVisible(False);self.view_stack.setVisible(False)
+        self.top15_scroll.setVisible(False)
 
     def hide_health_failure(self)->None:
         self.health_failure_frame.setVisible(False)
-        self.ranking_section_label.setVisible(True);self.main_pair.setVisible(True)
-        self.combo_section_label.setVisible(True);self.combo_grid.setVisible(True)
-        self.nav_row_widget.setVisible(True);self.view_stack.setVisible(True)
+        self.top15_scroll.setVisible(True)
 
     def _handle_open_settings(self)->None:
         if self._on_open_settings:self._on_open_settings()
@@ -427,46 +403,3 @@ class TodayWidget(QWidget):
             frames.append(frame)
         self._combo_frames=frames
         self.combo_grid.set_widgets(frames)
-
-    def render_game_views(self)->None:
-        for frame in self._game_frames:frame.deleteLater()
-        while self.games_layout.count():
-            item=self.games_layout.takeAt(0)
-            if item.widget():item.widget().deleteLater()
-        views=GamePredictionViewBuilder().build(self.current,self._time_service().timezone_name) if self.current else ()
-        frames=[]
-        if not views:
-            empty=QLabel("NO HAY JUEGOS PARA MOSTRAR.");empty.setObjectName("muted");self.games_layout.addWidget(empty)
-        for view in views:
-            frames.append(self._build_game_frame(view))
-        for frame in frames:self.games_layout.addWidget(frame)
-        self.games_layout.addStretch()
-        self._game_frames=frames
-
-    def _build_game_frame(self,view)->QFrame:
-        frame=QFrame();frame.setObjectName("card");lay=QVBoxLayout(frame)
-        time_text=self._time_service().format_time(view.game_time_utc)
-        header=QLabel(f"{view.away.team_name} @ {view.home.team_name} · {time_text}");header.setStyleSheet("font-weight:700");lay.addWidget(header)
-        if view.ready:
-            status=QLabel("✅ Ambos lineups confirmados");status.setObjectName("good");lay.addWidget(status)
-            for team in (view.away,view.home):
-                team_label=QLabel(team.team_name);team_label.setStyleSheet("font-weight:700;margin-top:8px;");lay.addWidget(team_label)
-                for player in team.players:
-                    lay.addWidget(self._player_row_widget(player))
-        else:
-            for team in (view.away,view.home):
-                mark="✅ LINEUP CONFIRMADO" if team.lineup_confirmed else "⏳ ESPERANDO LINEUP"
-                lay.addWidget(QLabel(f"{team.team_name}  {mark}"))
-            if view.empty_message:
-                msg=QLabel(view.empty_message);msg.setWordWrap(True);msg.setObjectName("muted");lay.addWidget(msg)
-        return frame
-
-    def _player_row_widget(self,player)->QWidget:
-        hr_text=f"{player.hr_probability*100:.1f}%" if player.hr_probability is not None else "—"
-        if player.eligible and player.card is not None:
-            btn=QPushButton(f"{player.player_name}   {hr_text}   {player.classification}")
-            btn.setFlat(True);btn.clicked.connect(lambda:self._show_detail(player.card))
-            return btn
-        label=QLabel(f"{player.player_name}   {hr_text}   {player.practical_status}")
-        label.setObjectName("muted")
-        return label

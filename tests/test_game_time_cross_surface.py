@@ -78,9 +78,11 @@ def test_today_ranking_detail_shows_canonical_time():
     assert EXPECTED_TIME in texts
 
 
-def test_today_por_partidos_shows_canonical_time():
+def test_games_page_shows_canonical_time():
+    from mlb_hr.ui.games_page import GamesPageWidget
+
     app()
-    widget = TodayWidget(SimpleNamespace(stake=10.0), _Store())
+    widget = GamesPageWidget(_Store())
     game = GameContext(
         game_pk=1, game_date=date(2026, 8, 30), game_time=GAME_TIME_UTC,
         away_team_id=1, away_team_name="Team A", home_team_id=2, home_team_name="Team B",
@@ -95,9 +97,9 @@ def test_today_por_partidos_shows_canonical_time():
         confirmed_lineups=1, total_games=1, updated_at=datetime.now(timezone.utc), pregame_games=1,
         game_contexts=(game,),
     )
-    widget._loaded(result)
-    labels = [label.text() for label in widget.games_page.findChildren(QLabel)]
-    buttons = [button.text() for button in widget.games_page.findChildren(QPushButton)]
+    widget.render(result)
+    labels = [label.text() for label in widget.findChildren(QLabel)]
+    buttons = [button.text() for button in widget.findChildren(QPushButton)]
     assert EXPECTED_TIME in "\n".join(labels + buttons)
 
 
