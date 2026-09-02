@@ -69,7 +69,7 @@ New V1.2.0 test coverage (112 tests in dedicated new files, plus updates to exis
 - Build: `MLB_HR_MODEL_PACKAGE=model_packages/V1.0.0 scripts/build_macos.sh` from RC_SHA.
 - Re-signed with `com.apple.security.cs.disable-library-validation` (a known, already-established requirement for this build pipeline on this machine — without it the self-test binary is killed at load time by macOS Library Validation; not a V1.2.0-specific issue).
 - `native_smoke.py --require-runtime-data`: `app_version=1.2.0`, `model_version=V1.0.0`, hash exact match, `statcast_runtime_available=true` (1164 parquet), self-test PASS, `passed: true`.
-- **Manual checklist**: not yet confirmed by you on this real machine — see "Pending" below.
+- **Manual checklist**: **confirmed by you on real macOS hardware.** App opens correctly; HOY, POR PARTIDOS, COMBINACIONES, HISTORIAL, and AJUSTES all function as expected; Favoritos, filtros, búsqueda, detalles, navegación, actualización, and guardado were all checked.
 
 ## Windows Native Gate — PASS
 
@@ -109,6 +109,6 @@ No tracked-file drift. Untracked entries are pre-existing local artifacts from e
 
 ## Status
 
-**`release_ready = true`** for the implementation and both native gates.
+**`release_ready = true`.** Implementation, both native gates, and the macOS manual checklist are all confirmed — nothing outstanding from the approved plan.
 
-**Pending before a public release**: your manual confirmation of the macOS UI checklist above (the one verification step in this entire plan that requires human hands, consistent with every prior native-verification phase in this engagement). No tag was created, no GitHub Release was published — matching the plan's own scope (native verification only, release closure was never requested as part of this execution).
+No tag was created, no GitHub Release was published in this phase — this plan's scope was native verification only; a public release closure (tag/publish, matching the same discipline used for V1.0.0 and V1.1.0) would need its own explicit, separate request.
