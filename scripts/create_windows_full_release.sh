@@ -6,9 +6,6 @@ ROOT="$PWD"
 STATCAST_SRC="$ROOT/data/statcast"
 WORKFLOW="Windows Native Gate"
 BRANCH="$(git branch --show-current)"
-OUT_NAME="MLB-HR-Windows-V1.0.1-FULL.zip"
-OUT_DIR="$HOME/Desktop"
-OUT="$OUT_DIR/$OUT_NAME"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -46,6 +43,10 @@ MODEL_VERSION=$(basename "$MODEL_PACKAGE_DIR")
 [[ -n "$MODEL_HASH" ]] || { echo "ERROR: no pude leer EXPECTED_MODEL_HASH del workflow."; exit 1; }
 [[ -n "$MODEL_VERSION" ]] || { echo "ERROR: no pude leer MODEL_PACKAGE_DIR del workflow."; exit 1; }
 
+OUT_NAME="MLB-HR-Windows-v${APP_VERSION}-FULL.zip"
+OUT_DIR="$HOME/Desktop"
+OUT="$OUT_DIR/$OUT_NAME"
+
 echo "Statcast local: $STATCAST_COUNT archivos"
 echo "Rama: $BRANCH"
 echo "App version: $APP_VERSION"
@@ -77,7 +78,7 @@ git add \
   tests/test_windows_full_package.py
 
 if ! git diff --cached --quiet; then
-  git commit -m "Build Windows V1.0.1 portable runtime release"
+  git commit -m "Build Windows v${APP_VERSION} portable runtime release"
 fi
 
 git push origin "$BRANCH"
